@@ -1,28 +1,16 @@
 import { NavLink, useLocation } from "react-router-dom";
-import {
-  LayoutDashboard,
-  FileText,
-  Users,
-  Package,
-  Settings,
-  Receipt,
-  Building2,
-} from "lucide-react";
+import { Receipt, Building2 } from "lucide-react";
+import { navigationItems } from "./navigationItems";
 import { cn } from "@/lib/utils";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Documentos", href: "/documentos", icon: FileText },
-  { name: "Clientes", href: "/clientes", icon: Users },
-  { name: "Productos", href: "/productos", icon: Package },
-  { name: "Configuración", href: "/configuracion", icon: Settings },
-];
+// navigationItems importado
 
 export function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-sidebar flex flex-col">
+    <aside className="fixed left-0 top-0 h-screen w-64 bg-sidebar flex flex-col z-40 md:relative md:h-screen md:w-64 md:flex md:flex-col transition-all duration-200
+      hidden md:flex">
       {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
@@ -38,7 +26,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {navigation.map((item) => {
+        {navigationItems.map((item) => {
           const isActive = location.pathname === item.href;
           return (
             <NavLink

@@ -99,7 +99,7 @@ export default function Clientes() {
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="page-header">Clientes</h1>
             <p className="page-subtitle mt-1">Gestiona tu cartera de clientes</p>
@@ -152,7 +152,7 @@ export default function Clientes() {
         </div>
 
         {/* Search */}
-        <div className="relative max-w-sm">
+        <div className="relative max-w-sm w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Buscar por nombre o RUT..."
@@ -163,7 +163,7 @@ export default function Clientes() {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredClients.map((client) => (
             <div
               key={client.id}

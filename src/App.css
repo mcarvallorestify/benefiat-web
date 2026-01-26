@@ -5,6 +5,17 @@
   text-align: center;
 }
 
+@media (max-width: 768px) {
+  #root {
+    padding: 0.5rem;
+    text-align: left;
+  }
+  .card {
+    padding: 1em;
+  }
+}
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;

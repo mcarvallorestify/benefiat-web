@@ -109,7 +109,7 @@ export default function Documentos() {
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="page-header">Documentos</h1>
             <p className="page-subtitle mt-1">Gestiona tus boletas y facturas electrónicas</p>
@@ -179,7 +179,7 @@ export default function Documentos() {
         </div>
 
         {/* Filters */}
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -202,8 +202,8 @@ export default function Documentos() {
         </div>
 
         {/* Table */}
-        <div className="bg-card rounded-xl border border-border overflow-hidden animate-fade-in">
-          <table className="w-full">
+        <div className="bg-card rounded-xl border border-border overflow-x-auto animate-fade-in">
+          <table className="w-full min-w-[700px]">
             <thead>
               <tr className="table-header">
                 <th className="text-left p-4">Documento</th>
