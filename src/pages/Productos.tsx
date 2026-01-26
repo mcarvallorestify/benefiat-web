@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { useUser } from "@/hooks/useUser";
+import { useEmpresa } from "@/hooks/useEmpresa";
+import { useProductos } from "@/hooks/useProductos";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,93 +21,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Package, Edit, Trash2 } from "lucide-react";
+import { Plus, Search, Package, Edit, Trash2, MoreHorizontal } from "lucide-react";
 
-interface Product {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  category: string;
-  price: number;
-  stock: number;
-  unit: string;
-  status: "activo" | "inactivo";
+function formatCLP(value: number) {
+  return value?.toLocaleString('es-CL');
 }
-
-const products: Product[] = [
-  {
-    id: "1",
-    code: "PROD-001",
-    name: "Servicio de Consultoría",
-    description: "Consultoría empresarial por hora",
-    category: "Servicios",
-    price: 75000,
-    stock: 0,
-    unit: "hora",
-    status: "activo",
-  },
-  {
-    id: "2",
-    code: "PROD-002",
-    name: "Laptop HP ProBook",
-    description: "Laptop empresarial 14 pulgadas",
-    category: "Equipos",
-    price: 890000,
-    stock: 15,
-    unit: "unidad",
-    status: "activo",
-  },
-  {
-    id: "3",
-    code: "PROD-003",
-    name: "Licencia Software Anual",
-    description: "Licencia de software empresarial",
-    category: "Software",
-    price: 250000,
-    stock: 0,
-    unit: "licencia",
-    status: "activo",
-  },
-  {
-    id: "4",
-    code: "PROD-004",
-    name: "Mouse Inalámbrico",
-    description: "Mouse ergonómico inalámbrico",
-    category: "Accesorios",
-    price: 25990,
-    stock: 45,
-    unit: "unidad",
-    status: "activo",
-  },
-  {
-    id: "5",
-    code: "PROD-005",
-    name: "Monitor 27 pulgadas",
-    description: "Monitor LED Full HD",
-    category: "Equipos",
-    price: 189990,
-    stock: 8,
-    unit: "unidad",
-    status: "inactivo",
-  },
-];
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat("es-CL", {
-    style: "currency",
-    currency: "CLP",
-  }).format(amount);
-};
 
 export default function Productos() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const { user } = useUser();
+  const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
+  const { productos, loading: loadingProductos } = useProductos(empresa?.id);
 
-  const filteredProducts = products.filter(
+  const filteredProducts = productos.filter(
     (product) =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.code.toLowerCase().includes(searchTerm.toLowerCase())
+      product.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.codigo?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -165,20 +98,7 @@ export default function Productos() {
                     <Label>Stock</Label>
                     <Input type="number" placeholder="0" />
                   </div>
-                  <div className="grid gap-2">
-                    <Label>Unidad</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Unidad" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unidad">Unidad</SelectItem>
-                        <SelectItem value="hora">Hora</SelectItem>
-                        <SelectItem value="licencia">Licencia</SelectItem>
-                        <SelectItem value="kg">Kilogramo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  
                 </div>
               </div>
               <div className="flex justify-end gap-3">
@@ -205,86 +125,120 @@ export default function Productos() {
         </div>
 
         {/* Table */}
-        <div className="bg-card rounded-xl border border-border overflow-hidden animate-fade-in">
-          <table className="w-full">
-            <thead>
-              <tr className="table-header">
-                <th className="text-left p-4">Producto</th>
-                <th className="text-left p-4">Categoría</th>
-                <th className="text-right p-4">Precio</th>
-                <th className="text-right p-4">Stock</th>
-                <th className="text-center p-4">Estado</th>
-                <th className="text-center p-4">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProducts.map((product) => (
-                <tr key={product.id} className="table-row">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Package className="w-5 h-5 text-primary" />
+        <div className="bg-card rounded-xl border border-border overflow-x-auto animate-fade-in">
+          {loadingProductos ? (
+            <div className="p-8 text-center text-muted-foreground">Cargando productos...</div>
+          ) : (
+            <table className="w-full min-w-[600px]">
+              <thead>
+                <tr className="table-header">
+                  <th className="text-left p-4">Producto</th>
+                  <th className="text-left p-4 hidden md:table-cell">Categoría</th>
+                  <th className="text-right p-4">Precio</th>
+                  <th className="text-right p-4">Stock</th>
+                  <th className="text-center p-4 hidden md:table-cell">Estado</th>
+                  <th className="text-center p-4">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProducts.map((product) => (
+                  <tr key={product.id} className="table-row">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <Package className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">{product.nombre}</p>
+                          <p className="text-sm text-muted-foreground">{product.codigo}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-foreground">{product.name}</p>
-                        <p className="text-sm text-muted-foreground">{product.code}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <Badge variant="secondary">{product.category}</Badge>
-                  </td>
-                  <td className="p-4 text-right font-semibold text-foreground">
-                    {formatCurrency(product.price)}
-                    <span className="text-sm font-normal text-muted-foreground">
-                      /{product.unit}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right">
-                    {product.stock === 0 ? (
-                      <span className="text-muted-foreground">N/A</span>
-                    ) : (
-                      <span
+                    </td>
+                    <td className="p-4 hidden md:table-cell">
+                      <Badge variant="secondary">{product.categoria}</Badge>
+                    </td>
+                    <td className="p-4 text-right font-semibold text-foreground">
+                      {formatCLP(product.precio)}
+                    </td>
+                    <td className="p-4 text-right">
+                      {product.stock === 0 ? (
+                        <span className="text-muted-foreground">0</span>
+                      ) : (
+                        <span
+                          className={
+                            product.stock < 10
+                              ? "text-warning font-medium"
+                              : "text-foreground"
+                          }
+                        >
+                          {product.stock}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-4 text-center hidden md:table-cell">
+                      <Badge
+                        variant="outline"
                         className={
-                          product.stock < 10
-                            ? "text-warning font-medium"
-                            : "text-foreground"
+                          product.activo ? "badge-success" : "badge-error"
                         }
                       >
-                        {product.stock}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-4 text-center">
-                    <Badge
-                      variant="outline"
-                      className={
-                        product.status === "activo" ? "badge-success" : "badge-error"
-                      }
-                    >
-                      {product.status}
-                    </Badge>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                        {product.activo ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </td>
+                    <td className="p-4 text-center">
+                      {/* Acciones: menú de 3 puntos en móvil, botones en desktop */}
+                      <div className="flex items-center justify-center gap-2 md:hidden">
+                        <MenuAcciones product={product} />
+                      </div>
+                      <div className="hidden md:flex items-center justify-center gap-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+// Al final del archivo:
+function MenuAcciones({ product }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(true)}>
+        <MoreHorizontal className="w-5 h-5" />
+      </Button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden bg-black/40" onClick={() => setOpen(false)}>
+          <div className="bg-card rounded-t-xl w-full max-w-sm mx-auto p-6 pb-4 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-2">
+              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); /* lógica editar */ }}>
+                <Edit className="w-4 h-4" /> Editar
+              </Button>
+              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); /* lógica eliminar */ }}>
+                <Trash2 className="w-4 h-4" /> Eliminar
+              </Button>
+            </div>
+            <Button variant="outline" className="w-full mt-4" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
