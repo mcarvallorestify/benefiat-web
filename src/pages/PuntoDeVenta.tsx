@@ -1,25 +1,21 @@
-// ...existing code...
-function formatCLP(value) {
-  return value.toLocaleString('es-CL');
-}
 import React, { useState } from 'react';
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 import { useProductos } from "@/hooks/useProductos";
+import { useClientes } from "@/hooks/useClientes";
 
-// Clientes y otros datos simulados
-const clientes = [
-  { id: 1, nombre: 'Cliente 1' },
-  { id: 2, nombre: 'Cliente 2' },
-];
 const mediosPago = ['Efectivo', 'Tarjeta', 'Transferencia'];
 const tiposDocumento = ['Boleta', 'Factura'];
 
+function formatCLP(value) {
+  return value?.toLocaleString('es-CL');
+}
 
 export default function PuntoDeVenta() {
   const { user } = useUser();
-  const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
+  const { empresa, loading: loadingEmpresa } = useEmpresa(user?.tablaID);
+  const { clientes, loading: loadingClientes } = useClientes(empresa?.id);
   const [busqueda, setBusqueda] = useState('');
   const { productos, loading: loadingProductos } = useProductos(empresa?.id);
   const [productosFiltrados, setProductosFiltrados] = useState([]);
@@ -38,7 +34,6 @@ export default function PuntoDeVenta() {
     );
   };
 
-  // Actualizar productosFiltrados cuando cambian los productos o la búsqueda
   React.useEffect(() => {
     if (busqueda.trim() === "") {
       setProductosFiltrados([]);
@@ -210,10 +205,11 @@ export default function PuntoDeVenta() {
                 value={cliente}
                 onChange={e => setCliente(e.target.value)}
                 className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition bg-white"
+                disabled={loadingClientes}
               >
                 <option value="">Selecciona un cliente</option>
                 {clientes.map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                  <option key={c.tablaID} value={c.tablaID}>{c.nombre || c.email}</option>
                 ))}
               </select>
             </div>
