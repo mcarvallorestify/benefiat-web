@@ -1,26 +1,151 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 import { useProductos } from "@/hooks/useProductos";
 import { useClientes } from "@/hooks/useClientes";
+import { supabase } from "@/lib/supabaseClient";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Command, CommandInput, CommandList, CommandItem, CommandEmpty } from "@/components/ui/command";
+import { Search } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+
 
 const mediosPago = ['Efectivo', 'Tarjeta', 'Transferencia'];
 const tiposDocumento = ['Boleta', 'Factura'];
-
-function formatCLP(value) {
-  return value?.toLocaleString('es-CL');
-}
+const formatCLP = (value) => value?.toLocaleString('es-CL');
 
 export default function PuntoDeVenta() {
   const { user } = useUser();
-  const { empresa, loading: loadingEmpresa } = useEmpresa(user?.tablaID);
-  const { clientes, loading: loadingClientes } = useClientes(empresa?.id);
+  const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
+  const { clientes: clientesBase, loading: loadingClientesBase } = useClientes(empresa?.id);
+  // Local clientes state: puede contener todos (clientesBase) o resultados del servidor filtrados
+  const [clientes, setClientes] = useState([]);
+  const [loadingClientes, setLoadingClientes] = useState(false);
+  const [errorClientes, setErrorClientes] = useState("");
   const [busqueda, setBusqueda] = useState('');
   const { productos, loading: loadingProductos } = useProductos(empresa?.id);
   const [productosFiltrados, setProductosFiltrados] = useState([]);
   const [carrito, setCarrito] = useState([]);
   const [cliente, setCliente] = useState('');
+  const [openCliente, setOpenCliente] = useState(false);
+  const [textoabuscar, setTextoabuscar] = useState('');
+
+  // token para ignorar respuestas antiguas
+  const searchToken = useRef(0);
+  React.useEffect(() => {
+    if (!empresa?.id) return;
+    const q = textoabuscar?.trim();
+    // si q vacío, usar clientesBase (pero espera si aún carga)
+    if (!q) {
+      setErrorClientes("");
+      setLoadingClientes(false);
+      if (!loadingClientesBase) setClientes(clientesBase || []);
+      return;
+    }
+    setLoadingClientes(true);
+    setErrorClientes("");
+    const parts = q.split(/\s+/).filter(Boolean);
+    const selectCols = 'tablaID, nombre, apellido, nombreCompleto, email, direccion';
+    const myToken = ++searchToken.current;
+    const setIfLatest = (data) => {
+      if (myToken !== searchToken.current) return;
+      setClientes(data || []);
+    };
+    const setErrorIfLatest = (errMsg) => {
+      if (myToken !== searchToken.current) return;
+      setErrorClientes(errMsg);
+    };
+    const finalizeIfLatest = () => {
+      if (myToken !== searchToken.current) return;
+      setLoadingClientes(false);
+    };
+    // Si hay dos o más partes, buscamos nombre LIKE first AND apellido LIKE last
+    if (parts.length >= 2) {
+      const first = parts[0];
+      const last = parts[parts.length - 1];
+      supabase
+        .from('user')
+        .select(selectCols)
+        .eq('empresa', empresa.id)
+        .ilike('nombre', `%${first}%`)
+        .ilike('apellido', `%${last}%`)
+        .then(({ data, error }) => {
+          finalizeIfLatest();
+          if (error) {
+            console.error('Error Supabase clientes:', error);
+            setErrorIfLatest(error.message || 'Error desconocido');
+            setIfLatest([]);
+          } else {
+            setIfLatest(data);
+          }
+        });
+    } else {
+      // Un solo término: buscar en nombre O apellido O nombreCompleto
+      const term = parts[0];
+      supabase
+        .from('user')
+        .select(selectCols)
+        .eq('empresa', empresa.id)
+        .or(`nombre.ilike.%${term}%,apellido.ilike.%${term}%,nombreCompleto.ilike.%${term}%`)
+        .then(({ data, error }) => {
+          finalizeIfLatest();
+          if (error) {
+            console.error('Error Supabase clientes:', error);
+            setErrorIfLatest(error.message || 'Error desconocido');
+            setIfLatest([]);
+          } else {
+            setIfLatest(data);
+          }
+        });
+    }
+  }, [textoabuscar, empresa?.id, loadingClientesBase, clientesBase]);
+  React.useEffect(() => {
+    if (!textoabuscar || textoabuscar.trim() === "") {
+      // Si la lista base aún carga, no sobreescribimos con vacío
+      if (loadingClientesBase) return;
+      setClientes(clientesBase || []);
+    }
+  }, [clientesBase, textoabuscar, loadingClientesBase]);
+
+  // Al abrir el selector, cargar todos los clientes (usa clientesBase si ya está disponible)
+  React.useEffect(() => {
+    if (!openCliente) return;
+    if (!empresa?.id) return;
+    const selectCols = 'tablaID, nombre, apellido, nombreCompleto, email, direccion';
+    if (clientesBase && clientesBase.length > 0) {
+      setClientes(clientesBase);
+      return;
+    }
+    setLoadingClientes(true);
+    supabase
+      .from('user')
+      .select(selectCols)
+      .eq('empresa', empresa.id)
+      .then(({ data, error }) => {
+        setLoadingClientes(false);
+        if (error) {
+          console.error('Error cargando clientes al abrir selector:', error);
+          setErrorClientes(error.message || 'Error desconocido');
+          setClientes([]);
+        } else {
+          setClientes(data || []);
+        }
+      });
+  }, [openCliente, empresa?.id, clientesBase]);
+
+  
+
+
   const [medioPago, setMedioPago] = useState('');
   const [tipoDocumento, setTipoDocumento] = useState('Boleta');
   const [mensaje, setMensaje] = useState('');
@@ -135,6 +260,8 @@ export default function PuntoDeVenta() {
     }
   };
 
+
+
   return (
     <AppLayout>
       <div className="w-full mx-auto p-4 bg-white rounded-xl shadow-lg">
@@ -201,42 +328,92 @@ export default function PuntoDeVenta() {
             {/* Configuración de venta */}
             <div>
               <label className="block mb-2 text-[#00679F] font-semibold">Cliente</label>
-              <select
-                value={cliente}
-                onChange={e => setCliente(e.target.value)}
-                className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition bg-white"
-                disabled={loadingClientes}
-              >
-                <option value="">Selecciona un cliente</option>
-                {clientes.map(c => (
-                  <option key={c.tablaID} value={c.tablaID}>{c.nombre || c.email}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setOpenCliente(true)}
+                  tabIndex={0}
+                >
+                  <span className="truncate text-left">
+                    {cliente
+                      ? (() => {
+                          const c = clientesBase.find(c => c.tablaID === cliente);
+                          if (!c) return 'Selecciona un cliente';
+                          const nombre = c["nombreCompleto"] || c["Nombre"] || c.nombre || '';
+                          return nombre + (c.direccion ? ' - ' + c.direccion : '');
+                        })()
+                      : 'Selecciona un cliente'}
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-50 ml-2" />
+                </button>
+
+                <Dialog open={openCliente} onOpenChange={setOpenCliente}>
+                  <DialogContent className="max-w-3xl w-full">
+                    <DialogHeader>
+                      <DialogTitle>Seleccionar Cliente</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex gap-2 mb-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar por nombre o RUN..."
+                          value={textoabuscar}
+                          onChange={(e) => setTextoabuscar(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                      <Button onClick={() => { setTextoabuscar(''); setClientes(clientesBase || []); }}>Mostrar todos</Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-auto">
+                      {(loadingClientes || loadingClientesBase) ? (
+                        <div className="col-span-full text-center text-muted-foreground">Cargando clientes...</div>
+                      ) : clientes && clientes.length > 0 ? (
+                        clientes.map((c) => (
+                          <button
+                            key={c.tablaID}
+                            onClick={() => { setCliente(c.tablaID); setOpenCliente(false); setTextoabuscar(''); }}
+                            className="text-left p-3 rounded-lg border hover:shadow-sm bg-white"
+                          >
+                            <div className="font-medium text-[#00679F]">{c.nombreCompleto || `${(c.nombre || '')} ${(c.apellido || '')}`.trim()}</div>
+                            {c.email && <div className="text-sm text-muted-foreground">{c.email}</div>}
+                            {c.direccion && <div className="text-sm text-muted-foreground">{c.direccion}</div>}
+                          </button>
+                        ))
+                      ) : (
+                        <div className="col-span-full text-center text-muted-foreground">No hay clientes</div>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
             <div>
               <label className="block mb-2 text-[#00679F] font-semibold">Medio de Pago</label>
-              <select
-                value={medioPago}
-                onChange={e => setMedioPago(e.target.value)}
-                className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition bg-white"
-              >
-                <option value="">Selecciona medio de pago</option>
-                {mediosPago.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+              <Select value={medioPago} onValueChange={setMedioPago}>
+                <SelectTrigger className="w-full h-10 text-base">
+                  <SelectValue placeholder="Selecciona medio de pago" />
+                </SelectTrigger>
+                <SelectContent>
+                  {mediosPago.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="block mb-2 text-[#00679F] font-semibold">Tipo de Documento</label>
-              <select
-                value={tipoDocumento}
-                onChange={e => setTipoDocumento(e.target.value)}
-                className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition bg-white"
-              >
-                {tiposDocumento.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+              <Select value={tipoDocumento} onValueChange={setTipoDocumento}>
+                <SelectTrigger className="w-full h-10 text-base">
+                  <SelectValue placeholder="Selecciona tipo de documento" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tiposDocumento.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {/* Detalle de totales */}
             <div className="bg-white rounded-lg shadow p-4 mt-2 mb-2 border border-[#6EDCF8]/30">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 import { useProductos } from "@/hooks/useProductos";
@@ -34,11 +34,20 @@ export default function Productos() {
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
   const { productos, loading: loadingProductos } = useProductos(empresa?.id);
 
+  // Pagination
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const filteredProducts = productos.filter(
     (product) =>
       product.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.codigo?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const productsPage = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
+  // reset page when filter changes
+  useEffect(() => { setPage(1); }, [searchTerm, productos.length]);
+
+  
 
   return (
     <AppLayout>
@@ -141,7 +150,7 @@ export default function Productos() {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => (
+                {productsPage.map((product) => (
                   <tr key={product.id} className="table-row">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
@@ -207,6 +216,17 @@ export default function Productos() {
                 ))}
               </tbody>
             </table>
+          )}
+          {/* Pagination Productos */}
+          {!loadingProductos && (
+            <div className="flex items-center justify-between p-3">
+              <div className="text-sm text-muted-foreground">Mostrando {productsPage.length} de {filteredProducts.length} productos</div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Anterior</Button>
+                <div className="text-sm">{page} / {totalPages}</div>
+                <Button variant="ghost" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Siguiente</Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

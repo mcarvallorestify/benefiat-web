@@ -7,13 +7,18 @@ export function useClientes(empresaId) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!empresaId) return;
+    console.log('[useClientes] useEffect triggered. empresaId:', empresaId);
+    if (!empresaId) {
+      console.log('[useClientes] empresaId is falsy, consulta NO ejecutada');
+      return;
+    }
     setLoading(true);
     supabase
       .from("user")
-      .select("tablaID, nombre, email")
+      .select('tablaID, nombre, apellido, email')
       .eq("empresa", empresaId)
       .then(({ data, error }) => {
+        console.log('[useClientes] data:', data, 'error:', error);
         setClientes(data || []);
         setError(error);
         setLoading(false);
