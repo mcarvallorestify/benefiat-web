@@ -39,6 +39,9 @@ export default function PuntoDeVenta() {
   const [cliente, setCliente] = useState('');
   const [openCliente, setOpenCliente] = useState(false);
   const [textoabuscar, setTextoabuscar] = useState('');
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
 
   // token para ignorar respuestas antiguas
   const searchToken = useRef(0);
@@ -159,6 +162,36 @@ export default function PuntoDeVenta() {
     );
   };
 
+  const handleBuscarKeyDown = (e) => {
+    // Abrir modal para producto personalizado cuando el usuario presiona 0 + Enter
+    if (e.key === 'Enter' && e.currentTarget.value.trim() === '0') {
+      e.preventDefault();
+      setShowCustomModal(true);
+    }
+  };
+
+  const handleAddCustomProduct = () => {
+    const nombre = (customName || '').trim();
+    const precioNum = Number(customPrice);
+    if (!nombre || !precioNum || isNaN(precioNum) || precioNum <= 0) {
+      // simple validación
+      return;
+    }
+    const customProduct = {
+      id: `custom-${Date.now()}`,
+      nombre,
+      precio: precioNum,
+      producto_id: null,
+    };
+    // añadir al carrito y también a la lista filtrada para visibilidad
+    agregarProducto(customProduct);
+    setProductosFiltrados((prev) => [customProduct, ...(prev || [])]);
+    setShowCustomModal(false);
+    setCustomName('');
+    setCustomPrice('');
+    setBusqueda('');
+  };
+
   React.useEffect(() => {
     if (busqueda.trim() === "") {
       setProductosFiltrados([]);
@@ -172,14 +205,36 @@ export default function PuntoDeVenta() {
   }, [productos, busqueda]);
 
   const agregarProducto = (producto) => {
-    setCarrito([...carrito, producto]);
+    setCarrito((prev) => {
+      // si ya existe el mismo id, incrementamos la cantidad
+      const idx = prev.findIndex((it) => it.id && producto.id && it.id === producto.id);
+      if (idx !== -1) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], cantidad: (copy[idx].cantidad || 1) + 1 };
+        return copy;
+      }
+      return [...prev, { ...producto, cantidad: 1 }];
+    });
   };
 
   const quitarProducto = (index) => {
-    setCarrito(carrito.filter((_, i) => i !== index));
+    setCarrito((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const total = carrito.reduce((sum, p) => sum + p.precio, 0);
+  const updateCantidad = (index, value) => {
+    const qty = Math.max(1, Number(value) || 1);
+    setCarrito((prev) => prev.map((it, i) => (i === index ? { ...it, cantidad: qty } : it)));
+  };
+
+  const incrementCantidad = (index) => {
+    setCarrito((prev) => prev.map((it, i) => (i === index ? { ...it, cantidad: (it.cantidad || 1) + 1 } : it)));
+  };
+
+  const decrementCantidad = (index) => {
+    setCarrito((prev) => prev.map((it, i) => (i === index ? { ...it, cantidad: Math.max(1, (it.cantidad || 1) - 1) } : it)));
+  };
+
+  const total = carrito.reduce((sum, p) => sum + (p.precio || 0) * (p.cantidad || 1), 0);
 
   const handlePagar = async () => {
     if (!cliente || !medioPago || carrito.length === 0) {
@@ -278,6 +333,7 @@ export default function PuntoDeVenta() {
                 placeholder="Buscar producto..."
                 value={busqueda}
                 onChange={handleBuscar}
+                onKeyDown={handleBuscarKeyDown}
                 className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition mb-2 bg-white"
               />
               {busqueda.trim() !== '' && (
@@ -309,14 +365,33 @@ export default function PuntoDeVenta() {
                 )}
                 {carrito.map((p, i) => (
                   <li key={i} className="flex justify-between items-center py-3 px-2">
-                    <span className="font-medium text-[#00679F]">{p.nombre}</span>
-                    <span className="text-[#00679F] font-bold">${formatCLP(p.precio)}</span>
-                    <button
-                      className="text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg ml-4 text-sm font-semibold shadow"
-                      onClick={() => quitarProducto(i)}
-                    >
-                      Quitar
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-[#00679F]">{p.nombre}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="inline-flex items-center border rounded-md overflow-hidden">
+                        <button
+                          className="px-3 py-1 bg-[#f1f9fb] hover:bg-[#e0f3f8] text-[#00679F]"
+                          onClick={() => decrementCantidad(i)}
+                        >
+                          −
+                        </button>
+                        <div className="px-3 py-1 bg-white text-[#00679F] font-medium">{p.cantidad || 1}</div>
+                        <button
+                          className="px-3 py-1 bg-[#f1f9fb] hover:bg-[#e0f3f8] text-[#00679F]"
+                          onClick={() => incrementCantidad(i)}
+                        >
+                          +
+                        </button>
+                      </div>
+                      <span className="text-[#00679F] font-bold">${formatCLP((p.precio || 0) * (p.cantidad || 1))}</span>
+                      <button
+                        className="text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg ml-4 text-sm font-semibold shadow"
+                        onClick={() => quitarProducto(i)}
+                      >
+                        Quitar
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -335,16 +410,16 @@ export default function PuntoDeVenta() {
                   onClick={() => setOpenCliente(true)}
                   tabIndex={0}
                 >
-                  <span className="truncate text-left">
-                    {cliente
-                      ? (() => {
-                          const c = clientesBase.find(c => c.tablaID === cliente);
-                          if (!c) return 'Selecciona un cliente';
-                          const nombre = c["nombreCompleto"] || c["Nombre"] || c.nombre || '';
-                          return nombre + (c.direccion ? ' - ' + c.direccion : '');
-                        })()
-                      : 'Selecciona un cliente'}
-                  </span>
+                    <span className="truncate text-left">
+                      {cliente
+                        ? (() => {
+                            const c = (clientesBase || []).find(c => c.tablaID === cliente);
+                            if (!c) return 'Selecciona un cliente';
+                            const nombre = c.nombreCompleto || `${(c.nombre || '')} ${(c.apellido || '')}`.trim() || c.Nombre || '';
+                            return nombre + (c.direccion ? ' - ' + c.direccion : '');
+                          })()
+                        : 'Selecciona un cliente'}
+                    </span>
                   <ChevronDown className="h-4 w-4 opacity-50 ml-2" />
                 </button>
 
@@ -387,6 +462,28 @@ export default function PuntoDeVenta() {
                     </div>
                   </DialogContent>
                 </Dialog>
+                  <Dialog open={showCustomModal} onOpenChange={setShowCustomModal}>
+                    <DialogContent className="max-w-md w-full">
+                      <DialogHeader>
+                        <DialogTitle>Agregar producto personalizado</DialogTitle>
+                      </DialogHeader>
+                      <div className="flex flex-col gap-3">
+                        <Input placeholder="Nombre del producto" value={customName} onChange={(e) => setCustomName(e.target.value)} />
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Precio (ej: 1500)"
+                          maxLength={10}
+                          value={customPrice}
+                          onChange={(e) => setCustomPrice(e.target.value.replace(/[^0-9]/g, ''))}
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="ghost" onClick={() => { setShowCustomModal(false); setCustomName(''); setCustomPrice(''); }}>Cancelar</Button>
+                          <Button onClick={handleAddCustomProduct}>Añadir y agregar al carrito</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
               </div>
             </div>
             <div>

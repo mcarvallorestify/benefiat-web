@@ -342,7 +342,7 @@ export default function Clientes() {
                       email: formEmail,
                       numeroContacto: formNumeroContacto || null,
                       direccion: formDireccion || null,
-                      run: Number(formRun),
+                      run: Number(String(formRun).replace(/\D/g, '')),
                       dv: String(formDv),
                       empresa: empresa?.id || null,
                       estado: 'activo',
