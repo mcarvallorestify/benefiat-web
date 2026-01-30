@@ -15,6 +15,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -65,6 +75,10 @@ export default function Productos() {
   const [proveedores, setProveedores] = useState<any[]>([]);
   const [creatingProducto, setCreatingProducto] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [editingProducto, setEditingProducto] = useState<any>(null);
+  const [deleteProductoOpen, setDeleteProductoOpen] = useState(false);
+  const [productoToDelete, setProductoToDelete] = useState<any>(null);
+  const [deletingProducto, setDeletingProducto] = useState(false);
   
   // Búsqueda de categorías y proveedores
   const [categoriaSearch, setCategoriSearch] = useState("");
@@ -85,6 +99,15 @@ export default function Productos() {
   const [regiones, setRegiones] = useState<any[]>([]);
   const [ciudadesProveedor, setCiudadesProveedor] = useState<any[]>([]);
   const [proveedorCitySearch, setProveedorCitySearch] = useState("");
+  
+  // Edición y eliminación de categorías
+  const [editingCategoria, setEditingCategoria] = useState<any>(null);
+  const [deleteCategoriaOpen, setDeleteCategoriaOpen] = useState(false);
+  const [categoriaToDelete, setCategoriaToDelete] = useState<any>(null);
+  const [deletingCategoria, setDeletingCategoria] = useState(false);
+  const [editCategoriaOpen, setEditCategoriaOpen] = useState(false);
+  const [editCategoriaName, setEditCategoriaName] = useState("");
+  const [updatingCategoria, setUpdatingCategoria] = useState(false);
   
   const filteredCategorias = categorias.filter((c) => {
     if (!categoriaSearch) return true;
@@ -189,6 +212,7 @@ export default function Productos() {
     setCreateError("");
     setCategoriSearch("");
     setProveedorSearch("");
+    setEditingProducto(null);
   };
 
   const uploadProductoImagen = async (file: File) => {
@@ -268,6 +292,95 @@ export default function Productos() {
     }
   };
 
+  const editarCategoria = async () => {
+    if (!editCategoriaName.trim() || !editingCategoria) return;
+    setUpdatingCategoria(true);
+    try {
+      const { error } = await supabase
+        .from("Categoría")
+        .update({ nombre: editCategoriaName })
+        .eq("id", editingCategoria.id);
+      
+      if (error) throw error;
+      
+      // Actualizar lista local
+      const { data } = await supabase.from("Categoría").select("*").eq("empresa", empresa?.id);
+      setCategorias((data as any[]) || []);
+      
+      setEditCategoriaOpen(false);
+      setEditingCategoria(null);
+      setEditCategoriaName("");
+    } catch (e) {
+      console.error("Error editando categoría", e);
+    } finally {
+      setUpdatingCategoria(false);
+    }
+  };
+
+  const eliminarCategoria = async () => {
+    if (!categoriaToDelete) return;
+    setDeletingCategoria(true);
+    try {
+      const { error } = await supabase
+        .from("Categoría")
+        .delete()
+        .eq("id", categoriaToDelete.id);
+      
+      if (error) throw error;
+      
+      // Actualizar lista local
+      setCategorias(categorias.filter(c => c.id !== categoriaToDelete.id));
+      setDeleteCategoriaOpen(false);
+      setCategoriaToDelete(null);
+    } catch (e: any) {
+      console.error("Error eliminando categoría:", e);
+      alert(e?.message || "Error al eliminar categoría");
+    } finally {
+      setDeletingCategoria(false);
+    }
+  };
+
+  const cargarProductoParaEditar = async (producto: any) => {
+    setFormNombre(producto.nombre || "");
+    setFormDescripcion(producto.descripcion || "");
+    setFormPrecio(producto.precio ? String(producto.precio) : "");
+    setFormPrecioCompra(producto.precio_compra_coniva ? String(producto.precio_compra_coniva) : "");
+    setFormStock(producto.stock ? String(producto.stock) : "");
+    setFormCategoriaId(producto.categoria_id || null);
+    setFormProveedorId(producto.proveedor_id || null);
+    setFormImagenPreview(producto.imagen || null);
+    setFormIndicaciones(producto.indicacionescontraindicaciones || "");
+    setFormModoUso(producto.mododeuso || "");
+    setFormDosificacion(producto.dosificacion || "");
+    setFormAnalisis(producto.analisis || "");
+    setFormIngredientes(producto.ingredientes || "");
+    setFormPrecauciones(producto.precauciones || "");
+    setEditingProducto(producto);
+    setIsDialogOpen(true);
+  };
+
+  const eliminarProducto = async () => {
+    if (!productoToDelete) return;
+    setDeletingProducto(true);
+    try {
+      const { error } = await supabase
+        .from("productos")
+        .delete()
+        .eq("id", productoToDelete.id);
+      
+      if (error) throw error;
+      
+      setDeleteProductoOpen(false);
+      setProductoToDelete(null);
+      // La lista se actualizará automáticamente por el hook useProductos
+    } catch (e: any) {
+      console.error("Error eliminando producto:", e);
+      alert(e?.message || "Error al eliminar producto");
+    } finally {
+      setDeletingProducto(false);
+    }
+  };
+
   
 
   return (
@@ -284,7 +397,6 @@ export default function Productos() {
         </SheetTrigger>
         <SheetContent side="left" className="w-[280px] p-0">
           <SheetHeader className="p-6 border-b">
-            <SheetTitle>Menú</SheetTitle>
           </SheetHeader>
           <nav className="flex flex-col gap-1 p-4">
             <button
@@ -390,6 +502,8 @@ export default function Productos() {
 
         {/* Contenido principal */}
         <div className="flex-1 min-w-0 space-y-6">
+        {selectedSection === "productos" && (
+          <>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -405,7 +519,7 @@ export default function Productos() {
             </DialogTrigger>
             <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Agregar Nuevo Producto</DialogTitle>
+                <DialogTitle>{editingProducto ? "Editar Producto" : "Agregar Nuevo Producto"}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 {/* Campos básicos */}
@@ -764,14 +878,14 @@ export default function Productos() {
                   
                   setCreatingProducto(true);
                   try {
-                    let imagenUrl = null;
+                    let imagenUrl = editingProducto?.imagen || null;
                     if (formImagen) {
                       setUploadingImagen(true);
                       imagenUrl = await uploadProductoImagen(formImagen);
                       setUploadingImagen(false);
                     }
 
-                    const insertObj: any = {
+                    const dataObj: any = {
                       nombre: formNombre,
                       descripcion: formDescripcion || null,
                       precio: Number(formPrecio),
@@ -780,28 +894,44 @@ export default function Productos() {
                       categoria_id: formCategoriaId,
                       proveedor_id: formProveedorId || null,
                       imagen: imagenUrl || null,
-                      empresa: empresa?.id || null,
                       activo: true,
                     };
 
                     if (empresa?.tipoEmpresa === "Petshop") {
-                      insertObj.indicacionescontraindicaciones = formIndicaciones || null;
-                      insertObj.mododeuso = formModoUso || null;
-                      insertObj.dosificacion = formDosificacion || null;
-                      insertObj.analisis = formAnalisis || null;
-                      insertObj.ingredientes = formIngredientes || null;
-                      insertObj.precauciones = formPrecauciones || null;
+                      dataObj.indicacionescontraindicaciones = formIndicaciones || null;
+                      dataObj.mododeuso = formModoUso || null;
+                      dataObj.dosificacion = formDosificacion || null;
+                      dataObj.analisis = formAnalisis || null;
+                      dataObj.ingredientes = formIngredientes || null;
+                      dataObj.precauciones = formPrecauciones || null;
                     }
 
-                    const { error } = await supabase.from("productos").insert([insertObj]);
-                    if (error) {
-                      console.error("Error creando producto", error);
-                      setCreateError(error.message || "Error creando producto");
-                      return;
+                    if (editingProducto) {
+                      // Actualizar producto existente
+                      const { error } = await supabase
+                        .from("productos")
+                        .update(dataObj)
+                        .eq("id", editingProducto.id);
+                      
+                      if (error) {
+                        console.error("Error actualizando producto", error);
+                        setCreateError(error.message || "Error actualizando producto");
+                        return;
+                      }
+                    } else {
+                      // Crear nuevo producto
+                      dataObj.empresa = empresa?.id || null;
+                      const { error } = await supabase.from("productos").insert([dataObj]);
+                      if (error) {
+                        console.error("Error creando producto", error);
+                        setCreateError(error.message || "Error creando producto");
+                        return;
+                      }
                     }
 
                     resetFormProducto();
                     setIsDialogOpen(false);
+                    setEditingProducto(null);
                   } catch (e: any) {
                     console.error(e);
                     setCreateError(e?.message || "Error desconocido");
@@ -809,7 +939,7 @@ export default function Productos() {
                     setCreatingProducto(false);
                   }
                 }} disabled={creatingProducto || uploadingImagen}>
-                  {creatingProducto ? "Guardando..." : "Guardar Producto"}
+                  {creatingProducto ? "Guardando..." : (editingProducto ? "Actualizar Producto" : "Guardar Producto")}
                 </Button>
               </div>
             </DialogContent>
@@ -891,16 +1021,27 @@ export default function Productos() {
                     <td className="p-4 text-center">
                       {/* Acciones: menú de 3 puntos en móvil, botones en desktop */}
                       <div className="flex items-center justify-center gap-2 md:hidden">
-                        <MenuAcciones product={product} />
+                        <MenuAcciones 
+                          product={product} 
+                          onEdit={cargarProductoParaEditar}
+                          onDelete={(p) => {
+                            setProductoToDelete(p);
+                            setDeleteProductoOpen(true);
+                          }}
+                        />
                       </div>
                       <div className="hidden md:flex items-center justify-center gap-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => cargarProductoParaEditar(product)}>
                           <Edit className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setProductoToDelete(product);
+                            setDeleteProductoOpen(true);
+                          }}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -923,6 +1064,183 @@ export default function Productos() {
             </div>
           )}
         </div>
+        </>
+        )}
+
+        {/* AlertDialog Eliminar Producto */}
+        <AlertDialog open={deleteProductoOpen} onOpenChange={setDeleteProductoOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción no se puede deshacer. El producto "{productoToDelete?.nombre}" será eliminado permanentemente.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => { setDeleteProductoOpen(false); setProductoToDelete(null); }}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={eliminarProducto} disabled={deletingProducto} className="bg-destructive hover:bg-destructive/90">
+                {deletingProducto ? "Eliminando..." : "Eliminar"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Modal Crear Categoría - Global */}
+        <Dialog open={createCategoriaOpen} onOpenChange={setCreateCategoriaOpen}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Nueva Categoría</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Nombre</Label>
+                <Input 
+                  value={newCategoriaName} 
+                  onChange={(e) => setNewCategoriaName(e.target.value)}
+                  placeholder="Ej: Electrónica, Ropa, etc"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setCreateCategoriaOpen(false)} disabled={creatingCategoria}>
+                Cancelar
+              </Button>
+              <Button onClick={crearCategoria} disabled={creatingCategoria || !newCategoriaName.trim()}>
+                {creatingCategoria ? "Creando..." : "Crear"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Sección Categorías */}
+        {selectedSection === "categorias" && (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="page-header">Categorías</h1>
+                <p className="page-subtitle mt-1">Gestiona las categorías de tus productos</p>
+              </div>
+              <Button className="gap-2" onClick={() => { setNewCategoriaName(""); setCreateCategoriaOpen(true); }}>
+                <Plus className="w-4 h-4" />
+                Nueva Categoría
+              </Button>
+            </div>
+
+            {/* Tabla de Categorías */}
+            <div className="bg-card rounded-xl border border-border overflow-x-auto animate-fade-in">
+              <table className="w-full">
+                <thead>
+                  <tr className="table-header">
+                    <th className="text-left p-4">Nombre</th>
+                    <th className="text-center p-4">Productos</th>
+                    <th className="text-center p-4">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categorias.map((categoria) => (
+                    <tr key={categoria.id} className="table-row">
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <FolderOpen className="w-5 h-5 text-primary" />
+                          </div>
+                          <span className="font-medium text-foreground">{categoria.nombre}</span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <Badge variant="secondary">
+                          {productos.filter(p => p.categoria_id === categoria.id).length}
+                        </Badge>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setEditingCategoria(categoria);
+                              setEditCategoriaName(categoria.nombre);
+                              setEditCategoriaOpen(true);
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setCategoriaToDelete(categoria);
+                              setDeleteCategoriaOpen(true);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {categorias.length === 0 && (
+                <div className="p-8 text-center text-muted-foreground">
+                  No hay categorías. Crea una nueva para comenzar.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Editar Categoría */}
+            <Dialog open={editCategoriaOpen} onOpenChange={setEditCategoriaOpen}>
+              <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                  <DialogTitle>Editar Categoría</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label>Nombre</Label>
+                    <Input 
+                      value={editCategoriaName} 
+                      onChange={(e) => setEditCategoriaName(e.target.value)}
+                      placeholder="Nombre de la categoría"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <Button variant="outline" onClick={() => { setEditCategoriaOpen(false); setEditingCategoria(null); }} disabled={updatingCategoria}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={editarCategoria} disabled={updatingCategoria || !editCategoriaName.trim()}>
+                    {updatingCategoria ? "Guardando..." : "Guardar"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* AlertDialog Eliminar Categoría */}
+            <AlertDialog open={deleteCategoriaOpen} onOpenChange={setDeleteCategoriaOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar categoría?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción no se puede deshacer. La categoría "{categoriaToDelete?.nombre}" será eliminada permanentemente.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => { setDeleteCategoriaOpen(false); setCategoriaToDelete(null); }}>
+                    Cancelar
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={eliminarCategoria} disabled={deletingCategoria} className="bg-destructive hover:bg-destructive/90">
+                    {deletingCategoria ? "Eliminando..." : "Eliminar"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        )}
+
       </div>
       </div>
     </AppLayout>
@@ -930,7 +1248,7 @@ export default function Productos() {
 }
 
 // Al final del archivo:
-function MenuAcciones({ product }) {
+function MenuAcciones({ product, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -941,10 +1259,10 @@ function MenuAcciones({ product }) {
         <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden bg-black/40" onClick={() => setOpen(false)}>
           <div className="bg-card rounded-t-xl w-full max-w-sm mx-auto p-6 pb-4 animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="flex flex-col gap-2">
-              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); /* lógica editar */ }}>
+              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onEdit(product); }}>
                 <Edit className="w-4 h-4" /> Editar
               </Button>
-              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); /* lógica eliminar */ }}>
+              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); onDelete(product); }}>
                 <Trash2 className="w-4 h-4" /> Eliminar
               </Button>
             </div>
