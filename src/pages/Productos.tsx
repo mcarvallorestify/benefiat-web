@@ -130,6 +130,18 @@ export default function Productos() {
   const [ciudadesEditProveedor, setCiudadesEditProveedor] = useState<any[]>([]);
   const [editProveedorCitySearch, setEditProveedorCitySearch] = useState("");
   
+  // Inventario
+  const [inventarioEditMode, setInventarioEditMode] = useState(false);
+  const [editedInventario, setEditedInventario] = useState<{[key: number]: {stock?: string, precioCompra?: string, precioVenta?: string}}>({});
+  const [inventarioPage, setInventarioPage] = useState(1);
+  const [inventarioSearch, setInventarioSearch] = useState("");
+  const inventarioPageSize = 15;
+  const [inventarioIngresoOpen, setInventarioIngresoOpen] = useState(false);
+  const [inventarioIngresoProducto, setInventarioIngresoProducto] = useState<any>(null);
+  const [inventarioIngresoCantidad, setInventarioIngresoCantidad] = useState("");
+  const [inventarioIngresoPrecioCompra, setInventarioIngresoPrecioCompra] = useState("");
+  const [inventarioIngresoLoading, setInventarioIngresoLoading] = useState(false);
+  
   const filteredCategorias = categorias.filter((c) => {
     if (!categoriaSearch) return true;
     return (c.nombre || "").toString().toLowerCase().includes(categoriaSearch.toLowerCase());
@@ -493,6 +505,11 @@ export default function Productos() {
     setIsDialogOpen(true);
   };
 
+  const editarProductoDesdeInventario = (producto: any) => {
+    setSelectedSection("productos");
+    cargarProductoParaEditar(producto);
+  };
+
   const eliminarProducto = async () => {
     if (!productoToDelete) return;
     setDeletingProducto(true);
@@ -512,6 +529,84 @@ export default function Productos() {
       alert(e?.message || "Error al eliminar producto");
     } finally {
       setDeletingProducto(false);
+    }
+  };
+
+  const actualizarInventarioProducto = async (productoId: number) => {
+    const cambios = editedInventario[productoId];
+    if (!cambios) return;
+
+    try {
+      const updateData: any = {};
+      if (cambios.stock !== undefined) updateData.stock = Number(cambios.stock);
+      if (cambios.precioCompra !== undefined) updateData.precio_compra_coniva = Number(cambios.precioCompra);
+      if (cambios.precioVenta !== undefined) updateData.precio = Number(cambios.precioVenta);
+
+      const { error } = await supabase
+        .from("Producto")
+        .update(updateData)
+        .eq("id", productoId);
+
+      if (error) throw error;
+
+      // Limpiar edición
+      setEditedInventario((prev) => {
+        const updated = { ...prev };
+        delete updated[productoId];
+        return updated;
+      });
+
+      await recargarProductos();
+    } catch (e: any) {
+      console.error("Error actualizando inventario:", e);
+      alert(e?.message || "Error al actualizar inventario");
+    }
+  };
+
+  const abrirIngresoInventario = (producto: any) => {
+    setInventarioIngresoProducto(producto);
+    setInventarioIngresoCantidad("");
+    setInventarioIngresoPrecioCompra(
+      producto?.precio_compra_coniva ? String(producto.precio_compra_coniva) : ""
+    );
+    setInventarioIngresoOpen(true);
+  };
+
+  const guardarIngresoInventario = async () => {
+    if (!inventarioIngresoProducto) return;
+    if (!inventarioIngresoCantidad) return;
+
+    const cantidad = Number(inventarioIngresoCantidad);
+    if (Number.isNaN(cantidad) || cantidad <= 0) return;
+
+    setInventarioIngresoLoading(true);
+    try {
+      const stockActual = Number(inventarioIngresoProducto.stock || 0);
+      const updateData: any = {
+        stock: stockActual + cantidad,
+      };
+
+      if (inventarioIngresoPrecioCompra !== "") {
+        updateData.precio_compra_coniva = Number(inventarioIngresoPrecioCompra);
+      }
+
+      const { error } = await supabase
+        .from("Producto")
+        .update(updateData)
+        .eq("id", inventarioIngresoProducto.id);
+
+      if (error) throw error;
+
+      setInventarioIngresoOpen(false);
+      setInventarioIngresoProducto(null);
+      setInventarioIngresoCantidad("");
+      setInventarioIngresoPrecioCompra("");
+      await recargarProductos();
+    } catch (e: any) {
+      console.error("Error ingresando inventario:", e);
+      alert(e?.message || "Error al ingresar inventario");
+    } finally {
+      setInventarioIngresoLoading(false);
     }
   };
 
@@ -1648,6 +1743,349 @@ export default function Productos() {
           </>
         )}
 
+        {/* Sección Inventario */}
+        {selectedSection === "inventario" && (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="page-header">Inventario</h1>
+                <p className="page-subtitle mt-1">Gestiona el stock y precios de tus productos</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Modo Edición</Label>
+                  <button
+                    onClick={() => {
+                      setInventarioEditMode(!inventarioEditMode);
+                      if (inventarioEditMode) {
+                        setEditedInventario({});
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      inventarioEditMode ? "bg-primary" : "bg-muted"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        inventarioEditMode ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Búsqueda */}
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar producto..."
+                value={inventarioSearch}
+                onChange={(e) => {
+                  setInventarioSearch(e.target.value);
+                  setInventarioPage(1);
+                }}
+                className="pl-10"
+              />
+            </div>
+
+            {/* Tabla de Inventario */}
+            <div className="bg-card rounded-xl border border-border overflow-x-auto animate-fade-in">
+              {loadingProductos ? (
+                <div className="p-8 text-center text-muted-foreground">Cargando inventario...</div>
+              ) : (() => {
+                const filteredInventario = productosData.filter((p) =>
+                  p.nombre?.toLowerCase().includes(inventarioSearch.toLowerCase()) ||
+                  p.codigo?.toLowerCase().includes(inventarioSearch.toLowerCase())
+                );
+                const totalInventarioPages = Math.max(1, Math.ceil(filteredInventario.length / inventarioPageSize));
+                const inventarioItems = filteredInventario.slice(
+                  (inventarioPage - 1) * inventarioPageSize,
+                  inventarioPage * inventarioPageSize
+                );
+
+                return (
+                  <>
+                    <table className="w-full min-w-[700px]">
+                      <thead>
+                        <tr className="table-header">
+                          <th className="text-left p-4">Producto</th>
+                          <th className="text-left p-4 hidden md:table-cell">Categoría</th>
+                          <th className="text-right p-4">Stock</th>
+                          <th className="text-right p-4">Precio Compra</th>
+                          <th className="text-right p-4">Precio Venta</th>
+                          <th className="text-center p-4">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inventarioItems.map((producto) => {
+                          const isEditing = editedInventario[producto.id];
+                          const stockValue = isEditing?.stock !== undefined ? isEditing.stock : String(producto.stock || 0);
+                          const precioCompraValue = isEditing?.precioCompra !== undefined ? isEditing.precioCompra : String(producto.precio_compra_coniva || 0);
+                          const precioVentaValue = isEditing?.precioVenta !== undefined ? isEditing.precioVenta : String(producto.precio || 0);
+
+                          return (
+                            <tr key={producto.id} className="table-row">
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                                    <Package className="w-5 h-5 text-primary" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-foreground">{producto.nombre}</p>
+                                    <p className="text-sm text-muted-foreground">{producto.codigo}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-4 hidden md:table-cell">
+                                <Badge variant="secondary">{producto.categoria}</Badge>
+                              </td>
+                              <td className="p-4 text-right">
+                                {inventarioEditMode ? (
+                                  <Input
+                                    type="text"
+                                    value={stockValue}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^0-9]/g, '');
+                                      setEditedInventario((prev) => ({
+                                        ...prev,
+                                        [producto.id]: { ...prev[producto.id], stock: val }
+                                      }));
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (!/[0-9]/.test(e.key) && e.key !== 'Enter') e.preventDefault();
+                                      if (e.key === 'Enter') {
+                                        actualizarInventarioProducto(producto.id);
+                                      }
+                                    }}
+                                    className="w-24 text-right"
+                                    inputMode="numeric"
+                                  />
+                                ) : (
+                                  <span className={producto.stock < 10 ? "text-warning font-medium" : "text-foreground"}>
+                                    {producto.stock.toLocaleString('es-CL')}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4 text-right">
+                                {inventarioEditMode ? (
+                                  <Input
+                                    type="text"
+                                    value={precioCompraValue}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                                      if (val === '' || !isNaN(parseFloat(val))) {
+                                        setEditedInventario((prev) => ({
+                                          ...prev,
+                                          [producto.id]: { ...prev[producto.id], precioCompra: val }
+                                        }));
+                                      }
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (!/[0-9.]/.test(e.key) && e.key !== 'Enter') e.preventDefault();
+                                      if (e.key === 'Enter') {
+                                        actualizarInventarioProducto(producto.id);
+                                      }
+                                    }}
+                                    className="w-32 text-right"
+                                    inputMode="decimal"
+                                  />
+                                ) : (
+                                  <span className="text-foreground">
+                                    {formatCLP(producto.precio_compra_coniva || 0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4 text-right">
+                                {inventarioEditMode ? (
+                                  <Input
+                                    type="text"
+                                    value={precioVentaValue}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                                      if (val === '' || !isNaN(parseFloat(val))) {
+                                        setEditedInventario((prev) => ({
+                                          ...prev,
+                                          [producto.id]: { ...prev[producto.id], precioVenta: val }
+                                        }));
+                                      }
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (!/[0-9.]/.test(e.key) && e.key !== 'Enter') e.preventDefault();
+                                      if (e.key === 'Enter') {
+                                        actualizarInventarioProducto(producto.id);
+                                      }
+                                    }}
+                                    className="w-32 text-right font-semibold"
+                                    inputMode="decimal"
+                                  />
+                                ) : (
+                                  <span className="font-semibold text-foreground">
+                                    {formatCLP(producto.precio || 0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4 text-center">
+                                <div className="flex items-center justify-center gap-2 md:hidden">
+                                  <MenuAccionesInventario
+                                    product={producto}
+                                    onEdit={editarProductoDesdeInventario}
+                                    onDelete={(p) => {
+                                      setProductoToDelete(p);
+                                      setDeleteProductoOpen(true);
+                                    }}
+                                    onIngreso={abrirIngresoInventario}
+                                  />
+                                </div>
+                                <div className="hidden md:flex items-center justify-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => editarProductoDesdeInventario(producto)}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => abrirIngresoInventario(producto)}
+                                  >
+                                    <ClipboardList className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    onClick={() => {
+                                      setProductoToDelete(producto);
+                                      setDeleteProductoOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    
+                    {/* Paginación Inventario */}
+                    <div className="flex items-center justify-between p-3 border-t">
+                      <div className="text-sm text-muted-foreground">
+                        Mostrando {inventarioItems.length} de {filteredInventario.length} productos
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setInventarioPage((p) => Math.max(1, p - 1))}
+                          disabled={inventarioPage <= 1}
+                        >
+                          Anterior
+                        </Button>
+                        <div className="text-sm">
+                          {inventarioPage} / {totalInventarioPages}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setInventarioPage((p) => Math.min(totalInventarioPages, p + 1))}
+                          disabled={inventarioPage >= totalInventarioPages}
+                        >
+                          Siguiente
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {inventarioEditMode && (
+              <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Modo Edición Activo:</strong> Modifica los valores y presiona <kbd className="px-2 py-1 bg-white dark:bg-gray-800 border rounded">Enter</kbd> para guardar los cambios.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Modal Ingreso Inventario */}
+        <Dialog open={inventarioIngresoOpen} onOpenChange={setInventarioIngresoOpen}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Ingreso de Inventario</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Producto</Label>
+                <Input value={inventarioIngresoProducto?.nombre || ""} disabled />
+              </div>
+              <div className="grid gap-2">
+                <Label>Cantidad</Label>
+                <Input
+                  type="text"
+                  value={inventarioIngresoCantidad}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, "");
+                    setInventarioIngresoCantidad(val);
+                  }}
+                  onKeyPress={(e) => {
+                    if (!/[0-9]/.test(e.key) && e.key !== "Enter") e.preventDefault();
+                    if (e.key === "Enter") guardarIngresoInventario();
+                  }}
+                  placeholder="0"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Precio Compra</Label>
+                <Input
+                  type="text"
+                  value={inventarioIngresoPrecioCompra}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9.]/g, "");
+                    if (val === "" || !isNaN(parseFloat(val))) {
+                      setInventarioIngresoPrecioCompra(val);
+                    }
+                  }}
+                  onKeyPress={(e) => {
+                    if (!/[0-9.]/.test(e.key) && e.key !== "Enter") e.preventDefault();
+                    if (e.key === "Enter") guardarIngresoInventario();
+                  }}
+                  placeholder="$0"
+                  inputMode="decimal"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setInventarioIngresoOpen(false);
+                  setInventarioIngresoProducto(null);
+                  setInventarioIngresoCantidad("");
+                  setInventarioIngresoPrecioCompra("");
+                }}
+                disabled={inventarioIngresoLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={guardarIngresoInventario}
+                disabled={inventarioIngresoLoading || !inventarioIngresoCantidad}
+              >
+                {inventarioIngresoLoading ? "Guardando..." : "Guardar"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
       </div>
       </div>
     </AppLayout>
@@ -1668,6 +2106,37 @@ function MenuAcciones({ product, onEdit, onDelete }) {
             <div className="flex flex-col gap-2">
               <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onEdit(product); }}>
                 <Edit className="w-4 h-4" /> Editar
+              </Button>
+              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); onDelete(product); }}>
+                <Trash2 className="w-4 h-4" /> Eliminar
+              </Button>
+            </div>
+            <Button variant="outline" className="w-full mt-4" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function MenuAccionesInventario({ product, onEdit, onDelete, onIngreso }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(true)}>
+        <MoreHorizontal className="w-5 h-5" />
+      </Button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden bg-black/40" onClick={() => setOpen(false)}>
+          <div className="bg-card rounded-t-xl w-full max-w-sm mx-auto p-6 pb-4 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-2">
+              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onEdit(product); }}>
+                <Edit className="w-4 h-4" /> Editar
+              </Button>
+              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onIngreso(product); }}>
+                <ClipboardList className="w-4 h-4" /> Ingreso
               </Button>
               <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); onDelete(product); }}>
                 <Trash2 className="w-4 h-4" /> Eliminar
