@@ -14,6 +14,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Plus, Search, MoreHorizontal, Mail, Phone, Building2 } from "lucide-react";
 import {
@@ -75,6 +85,10 @@ function validarRut(run: string | number, dv: string): boolean {
 export default function Clientes() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingCliente, setEditingCliente] = useState<any>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [clienteToDelete, setClienteToDelete] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
   const { user } = useUser();
   // Igual que en Productos: useEmpresa(user?.id)
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
@@ -209,6 +223,64 @@ export default function Clientes() {
     return (c.nombre || "").toString().toLowerCase().includes(citySearch.toLowerCase());
   });
 
+  const resetForm = () => {
+    setFormNombre('');
+    setFormApellido('');
+    setFormEmail('');
+    setFormNumeroContacto('');
+    setFormDireccion('');
+    setFormRun('');
+    setFormDv('');
+    setIsEmpresa(false);
+    setFormRazSocial('');
+    setFormGiro('');
+    setFormRegion(null);
+    setFormCiudad(null);
+    setCreateError('');
+    setEditingCliente(null);
+  };
+
+  const loadClienteToEdit = async (cliente: any) => {
+    // Cargar datos completos del cliente
+    const { data } = await supabase.from('user').select('*').eq('tablaID', cliente.tablaID).maybeSingle();
+    if (data) {
+      setFormNombre(data.nombre || '');
+      setFormApellido(data.apellido || '');
+      setFormEmail(data.email || '');
+      setFormNumeroContacto(data.numeroContacto || '');
+      setFormDireccion(data.direccion || '');
+      setFormRun(String(data.run || ''));
+      setFormDv(String(data.dv || ''));
+      setIsEmpresa(!!(data.raz_social || data.giro));
+      setFormRazSocial(data.raz_social || '');
+      setFormGiro(data.giro || '');
+      setFormRegion(data.region || null);
+      setFormCiudad(data.ciudad || null);
+      setEditingCliente(data);
+      setIsDialogOpen(true);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!clienteToDelete) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from('user').delete().eq('tablaID', clienteToDelete.tablaID);
+      if (error) throw error;
+      
+      // Refrescar lista
+      const { data: refreshed } = await supabase.from('user').select('tablaID, nombre, apellido, email').eq('empresa', empresa?.id).order('created_at', { ascending: false });
+      setClientesLocal((refreshed as any[]) || []);
+      setDeleteConfirmOpen(false);
+      setClienteToDelete(null);
+    } catch (e: any) {
+      console.error('Error eliminando cliente:', e);
+      alert(e?.message || 'Error al eliminar cliente');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -220,14 +292,14 @@ export default function Clientes() {
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" onClick={resetForm}>
                 <Plus className="w-4 h-4" />
                 Nuevo Cliente
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[700px]">
               <DialogHeader>
-                <DialogTitle>Agregar Nuevo Cliente</DialogTitle>
+                <DialogTitle>{editingCliente ? 'Editar Cliente' : 'Agregar Nuevo Cliente'}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -325,7 +397,7 @@ export default function Clientes() {
                 {createError && <div className="text-sm text-destructive">{createError}</div>}
               </div>
               <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={creatingCliente}>
+                <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }} disabled={creatingCliente}>
                   Cancelar
                 </Button>
                 <Button onClick={async () => {
@@ -336,7 +408,7 @@ export default function Clientes() {
                   if (!validarRut(formRun, formDv)) { setCreateError('RUN/DV inválido'); return; }
                   setCreatingCliente(true);
                   try {
-                    const insertObj: any = {
+                    const dataObj: any = {
                       nombre: formNombre,
                       apellido: formApellido || null,
                       email: formEmail,
@@ -351,22 +423,34 @@ export default function Clientes() {
                       ciudad: formCiudad || null,
                     };
                     if (isEmpresa) {
-                      insertObj.raz_social = formRazSocial || null;
-                      insertObj.giro = formGiro || null;
+                      dataObj.raz_social = formRazSocial || null;
+                      dataObj.giro = formGiro || null;
                     }
 
-                    const { data, error } = await supabase.from('user').insert([insertObj]);
-                    if (error) {
-                      console.error('Error creando cliente', error);
-                      setCreateError(error.message || 'Error creando cliente');
-                      setCreatingCliente(false);
-                      return;
+                    if (editingCliente) {
+                      // Actualizar
+                      const { error } = await supabase.from('user').update(dataObj).eq('tablaID', editingCliente.tablaID);
+                      if (error) {
+                        console.error('Error actualizando cliente', error);
+                        setCreateError(error.message || 'Error actualizando cliente');
+                        setCreatingCliente(false);
+                        return;
+                      }
+                    } else {
+                      // Crear
+                      const { error } = await supabase.from('user').insert([dataObj]);
+                      if (error) {
+                        console.error('Error creando cliente', error);
+                        setCreateError(error.message || 'Error creando cliente');
+                        setCreatingCliente(false);
+                        return;
+                      }
                     }
+                    
                     // reload clientes list from server to keep consistent
                     const { data: refreshed } = await supabase.from('user').select('tablaID, nombre, apellido, email').eq('empresa', empresa?.id).order('created_at', { ascending: false });
                     setClientesLocal((refreshed as any[]) || []);
-                    // reset form
-                    setFormNombre(''); setFormApellido(''); setFormEmail(''); setFormNumeroContacto(''); setFormDireccion(''); setFormRun(''); setFormDv(''); setIsEmpresa(false); setFormRazSocial(''); setFormGiro(''); setFormRegion(null); setFormCiudad(null);
+                    resetForm();
                     setIsDialogOpen(false);
                   } catch (e: any) {
                     console.error(e);
@@ -375,7 +459,7 @@ export default function Clientes() {
                     setCreatingCliente(false);
                   }
                 }} disabled={creatingCliente}>
-                  {creatingCliente ? 'Guardando...' : 'Guardar Cliente'}
+                  {creatingCliente ? 'Guardando...' : (editingCliente ? 'Actualizar Cliente' : 'Guardar Cliente')}
                 </Button>
               </div>
             </DialogContent>
@@ -428,9 +512,9 @@ export default function Clientes() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Editar</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => loadClienteToEdit(client)}>Editar</DropdownMenuItem>
                       <DropdownMenuItem>Ver documentos</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">Eliminar</DropdownMenuItem>
+                      <DropdownMenuItem className="text-destructive" onClick={() => { setClienteToDelete(client); setDeleteConfirmOpen(true); }}>Eliminar</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -456,6 +540,24 @@ export default function Clientes() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente el cliente{' '}
+              <strong>{clienteToDelete?.nombre} {clienteToDelete?.apellido}</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-destructive hover:bg-destructive/90">
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

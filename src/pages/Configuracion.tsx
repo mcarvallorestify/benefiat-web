@@ -52,6 +52,18 @@ export default function Configuracion() {
   const [selectedCertFile, setSelectedCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState("");
   const [uploadingCert, setUploadingCert] = useState(false);
+  // CAF upload
+  const [selectedCafFile, setSelectedCafFile] = useState<File | null>(null);
+  const [uploadingCaf, setUploadingCaf] = useState(false);
+  const [siiFolioSiguiente, setSiiFolioSiguiente] = useState<number | null>(null);
+  // Logo upload
+  const [selectedLogoFile, setSelectedLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  // Portada upload
+  const [selectedPortadaFile, setSelectedPortadaFile] = useState<File | null>(null);
+  const [portadaPreview, setPortadaPreview] = useState<string | null>(null);
+  const [uploadingPortada, setUploadingPortada] = useState(false);
 
   useEffect(() => {
     if (!empresa) return;
@@ -70,6 +82,16 @@ export default function Configuracion() {
 
     setEmail(empresa.correoEmpresa ?? "");
     setTelefono(empresa.numEmpresa ?? "");
+    
+    // Cargar logo si existe
+    if (empresa.logo) {
+      setLogoPreview(empresa.logo);
+    }
+    
+    // Cargar portada si existe
+    if (empresa.imgEmpresa) {
+      setPortadaPreview(empresa.imgEmpresa);
+    }
   }, [empresa]);
 
   // Load regions on mount
@@ -380,6 +402,157 @@ export default function Configuracion() {
     }
   };
 
+  const uploadLogo = async () => {
+    if (!selectedLogoFile) {
+      toast({ title: "Archivo requerido", description: "Selecciona una imagen antes de subir." });
+      return;
+    }
+
+    if (!empresa?.id) {
+      toast({ title: "Empresa no encontrada", description: "Guarda primero los datos de la empresa." });
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const form = new FormData();
+      form.append("file", selectedLogoFile, selectedLogoFile.name);
+
+      const res = await fetch("https://pdv.restify.cl/media/subir.php", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.warn("Error subiendo logo:", res.status, text);
+        toast({ title: "Error", description: "No se pudo subir el logo." });
+        return;
+      }
+
+      const text = await res.text();
+      // Extraer URL de la respuesta HTML (buscar el href en el anchor tag)
+      const urlMatch = text.match(/href='([^']+)'/);
+      const logoUrl = urlMatch ? urlMatch[1] : null;
+
+      if (logoUrl) {
+        // Guardar URL en tabla empresa
+        const { error } = await supabase.from("empresa").update({ logo: logoUrl }).eq("id", empresa.id);
+        if (error) throw error;
+        
+        toast({ title: "Logo subido", description: "El logo fue guardado correctamente." });
+      } else {
+        toast({ title: "Advertencia", description: "Logo subido pero no se pudo extraer la URL." });
+      }
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Error inesperado al subir el logo." });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const uploadPortada = async () => {
+    if (!selectedPortadaFile) {
+      toast({ title: "Archivo requerido", description: "Selecciona una imagen antes de subir." });
+      return;
+    }
+
+    if (!empresa?.id) {
+      toast({ title: "Empresa no encontrada", description: "Guarda primero los datos de la empresa." });
+      return;
+    }
+
+    setUploadingPortada(true);
+    try {
+      const form = new FormData();
+      form.append("file", selectedPortadaFile, selectedPortadaFile.name);
+
+      const res = await fetch("https://pdv.restify.cl/media/subir.php", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.warn("Error subiendo portada:", res.status, text);
+        toast({ title: "Error", description: "No se pudo subir la portada." });
+        return;
+      }
+
+      const text = await res.text();
+      // Extraer URL de la respuesta HTML (buscar el href en el anchor tag)
+      const urlMatch = text.match(/href='([^']+)'/);
+      const portadaUrl = urlMatch ? urlMatch[1] : null;
+
+      if (portadaUrl) {
+        // Guardar URL en tabla empresa
+        const { error } = await supabase.from("empresa").update({ imgEmpresa: portadaUrl }).eq("id", empresa.id);
+        if (error) throw error;
+        
+        toast({ title: "Portada subida", description: "La portada fue guardada correctamente." });
+      } else {
+        toast({ title: "Advertencia", description: "Portada subida pero no se pudo extraer la URL." });
+      }
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Error inesperado al subir la portada." });
+    } finally {
+      setUploadingPortada(false);
+    }
+  };;
+
+  const uploadCafBoletas = async () => {
+    if (!selectedCafFile) {
+      toast({ title: "Archivo requerido", description: "Selecciona un archivo .xml antes de subir." });
+      return;
+    }
+    if (!empresa?.id) {
+      toast({ title: "Empresa no encontrada", description: "Guarda primero los datos de la empresa." });
+      return;
+    }
+
+    setUploadingCaf(true);
+    try {
+      const form = new FormData();
+      form.append("archivo", selectedCafFile, selectedCafFile.name || "CAF_boletas.xml");
+      const rutFormatted = (rutEmpresa || empresa?.rutEmpresa || empresa?.rut || "").toString();
+      form.append("rut", rutFormatted);
+
+      const sessionResp = await supabase.auth.getSession();
+      const jwt = sessionResp?.data?.session?.access_token ?? "";
+      const apiKey = (empresa?.api_key ?? empresa?.apiKey ?? "") as string;
+      if (!apiKey) {
+        toast({ title: "API key faltante", description: "La empresa no tiene `api_key` configurada." });
+        setUploadingCaf(false);
+        return;
+      }
+
+      const res = await fetch("https://pdv.restify.cl/dte/subir_caf_boletas.php", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          "X-API-KEY": apiKey,
+        },
+        body: form,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.warn("Error subiendo CAF:", res.status, text);
+        toast({ title: "Error", description: "No se pudo subir el CAF de boletas." });
+        return;
+      }
+
+      toast({ title: "CAF subido", description: "El CAF de boletas fue enviado correctamente." });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Error inesperado al subir el CAF." });
+    } finally {
+      setUploadingCaf(false);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -565,14 +738,6 @@ export default function Configuracion() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
-                    <Label>Folio Inicial Boletas</Label>
-                    <Input type="number" placeholder="1" value={siiFolioBoletas ?? ""} onChange={(e) => setSiiFolioBoletas(e.target.value ? Number(e.target.value) : null)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Folio Inicial Facturas</Label>
-                    <Input type="number" placeholder="1" value={siiFolioFacturas ?? ""} onChange={(e) => setSiiFolioFacturas(e.target.value ? Number(e.target.value) : null)} />
-                  </div>
-                  <div className="space-y-2">
                     <Label>Acteco (código actividad económica)</Label>
                     <Input type="number" placeholder="acteco" value={siiActeco ?? ""} onChange={(e) => setSiiActeco(e.target.value ? Number(e.target.value) : null)} />
                   </div>
@@ -617,12 +782,40 @@ export default function Configuracion() {
                 <Card className="mt-4">
                   <CardHeader>
                     <CardTitle>CAF / Folios</CardTitle>
-                    <CardDescription>Administración de folios (CAF) asociados a tus documentos</CardDescription>
+                    <CardDescription>Carga tu archivo CAF (.xml) para la emisión de boletas</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      <Label>CAF / Folios (lista o rango)</Label>
-                      <Textarea placeholder="Ej: 1-1000,1002,1005-2000" value={siiCAF} onChange={(e) => setSiiCAF((e.target as HTMLTextAreaElement).value)} rows={3} />
+                      <Label>Archivo CAF (.xml)</Label>
+                      <input
+                        type="file"
+                        accept=".xml"
+                        onChange={(e) => setSelectedCafFile(e.target.files?.[0] ?? null)}
+                        className="w-full"
+                      />
+                      {selectedCafFile && (
+                        <div className="text-sm text-muted-foreground">
+                          Archivo seleccionado: {selectedCafFile.name}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2 mt-4">
+                      <Label>Siguiente Folio a Usar</Label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Ej: 1000"
+                        value={siiFolioSiguiente ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, "");
+                          setSiiFolioSiguiente(val ? Number(val) : null);
+                        }}
+                      />
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button onClick={uploadCafBoletas} disabled={uploadingCaf || !selectedCafFile || !siiFolioSiguiente}>
+                        {uploadingCaf ? "Subiendo..." : "Subir CAF de boletas"}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -650,19 +843,99 @@ export default function Configuracion() {
                   <Label>Logo de la Empresa</Label>
                   <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center">
-                        <Building2 className="w-8 h-8 text-muted-foreground" />
-                      </div>
+                      {logoPreview ? (
+                        <div className="w-32 h-32 rounded-lg bg-white flex items-center justify-center overflow-hidden border">
+                          <img src={logoPreview} alt="Logo preview" className="max-w-full max-h-full" />
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center">
+                          <Building2 className="w-8 h-8 text-muted-foreground" />
+                        </div>
+                      )}
                       <p className="text-sm text-muted-foreground">
-                        Arrastra tu logo aquí o haz clic para seleccionar
+                        {selectedLogoFile ? selectedLogoFile.name : "Selecciona una imagen PNG o JPG"}
                       </p>
-                      <Button variant="outline" size="sm">
-                        Subir Logo
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setSelectedLogoFile(file);
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              setLogoPreview(event.target?.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="hidden"
+                        id="logo-input"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => document.getElementById("logo-input")?.click()}
+                      >
+                        Seleccionar Logo
                       </Button>
+                      {selectedLogoFile && (
+                        <Button onClick={uploadLogo} disabled={uploadingLogo} size="sm">
+                          {uploadingLogo ? "Subiendo..." : "Subir Logo"}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
-             
+
+                <div className="space-y-2">
+                  <Label>Portada de la Empresa - Para sitio web o sistemas donde integres tu empresa.</Label>
+                  <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      {portadaPreview ? (
+                        <div className="w-full h-40 rounded-lg bg-white flex items-center justify-center overflow-hidden border">
+                          <img src={portadaPreview} alt="Portada preview" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-full h-40 rounded-lg bg-muted flex items-center justify-center">
+                          <Building2 className="w-8 h-8 text-muted-foreground" />
+                        </div>
+                      )}
+                      <p className="text-sm text-muted-foreground">
+                        {selectedPortadaFile ? selectedPortadaFile.name : "Selecciona una imagen PNG o JPG"}
+                      </p>
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setSelectedPortadaFile(file);
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              setPortadaPreview(event.target?.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="hidden"
+                        id="portada-input"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => document.getElementById("portada-input")?.click()}
+                      >
+                        Seleccionar Portada
+                      </Button>
+                      {selectedPortadaFile && (
+                        <Button onClick={uploadPortada} disabled={uploadingPortada} size="sm">
+                          {uploadingPortada ? "Subiendo..." : "Subir Portada"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
