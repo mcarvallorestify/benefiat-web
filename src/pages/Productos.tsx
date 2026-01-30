@@ -12,7 +12,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -39,7 +38,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Package, Edit, Trash2, MoreHorizontal, Menu, FolderOpen, Users, ClipboardList } from "lucide-react";
+import { Plus, Search, Package, Edit, Trash2, Menu, FolderOpen, Users, ClipboardList } from "lucide-react";
+import { IngresoInventarioDialog, MenuAcciones, MenuAccionesInventario } from "@/components/productos/ProductosModals";
 
 function formatCLP(value: number) {
   if (!value && value !== 0) return "$0";
@@ -506,7 +506,6 @@ export default function Productos() {
   };
 
   const editarProductoDesdeInventario = (producto: any) => {
-    setSelectedSection("productos");
     cargarProductoParaEditar(producto);
   };
 
@@ -731,6 +730,314 @@ export default function Productos() {
 
         {/* Contenido principal */}
         <div className="flex-1 min-w-0 space-y-6">
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingProducto ? "Editar Producto" : "Agregar Nuevo Producto"}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              {/* Campos básicos */}
+              <div className="grid gap-2">
+                <Label>Nombre del Producto</Label>
+                <Input value={formNombre} onChange={(e) => setFormNombre(e.target.value)} placeholder="Nombre" />
+              </div>
+              
+              <div className="grid gap-2">
+                <Label>Descripción</Label>
+                <Input value={formDescripcion} onChange={(e) => setFormDescripcion(e.target.value)} placeholder="Descripción" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Precio de Venta</Label>
+                  <Input 
+                    type="text" 
+                    value={formPrecio} 
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      if (val === '' || !isNaN(parseFloat(val))) setFormPrecio(val);
+                    }}
+                    onKeyPress={(e) => {
+                      if (!/[0-9.]/.test(e.key)) e.preventDefault();
+                    }}
+                    placeholder="$0" 
+                    inputMode="decimal" 
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Precio Compra c/IVA</Label>
+                  <Input 
+                    type="text" 
+                    value={formPrecioCompra} 
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      if (val === '' || !isNaN(parseFloat(val))) setFormPrecioCompra(val);
+                    }}
+                    onKeyPress={(e) => {
+                      if (!/[0-9.]/.test(e.key)) e.preventDefault();
+                    }}
+                    placeholder="$0" 
+                    inputMode="decimal" 
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Stock</Label>
+                <Input 
+                  type="text" 
+                  value={formStock} 
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, '');
+                    if (val === '' || !isNaN(parseInt(val))) setFormStock(val);
+                  }}
+                  onKeyPress={(e) => {
+                    if (!/[0-9]/.test(e.key)) e.preventDefault();
+                  }}
+                  placeholder="0" 
+                  inputMode="numeric" 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Categoría</Label>
+                  <div className="flex gap-2">
+                    <Select value={formCategoriaId ? String(formCategoriaId) : ""} onValueChange={(v) => setFormCategoriaId(v ? Number(v) : null)}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Seleccionar categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <div className="p-2">
+                          <Input 
+                            placeholder="Buscar categoría..." 
+                            value={categoriaSearch} 
+                            onChange={(e) => setCategoriSearch(e.target.value)} 
+                          />
+                        </div>
+                        <div className="max-h-56 overflow-auto">
+                          {filteredCategorias.map((c) => (
+                            <SelectItem key={c.id} value={String(c.id)}>
+                              {c.nombre}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => { setNewCategoriaName(""); setCreateCategoriaOpen(true); }}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Proveedor</Label>
+                  <div className="flex gap-2">
+                    <Select value={formProveedorId ? String(formProveedorId) : ""} onValueChange={(v) => setFormProveedorId(v ? Number(v) : null)}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Seleccionar proveedor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <div className="p-2">
+                          <Input 
+                            placeholder="Buscar proveedor..." 
+                            value={proveedorSearch} 
+                            onChange={(e) => setProveedorSearch(e.target.value)} 
+                          />
+                        </div>
+                        <div className="max-h-56 overflow-auto">
+                          {filteredProveedores.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              {p.razonsocial}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => { 
+                        setNewProveedorName("");
+                        setNewProveedorRun("");
+                        setNewProveedorDv("");
+                        setNewProveedorGiro("");
+                        setNewProveedorNumContacto("");
+                        setNewProveedorDireccion("");
+                        setNewProveedorRegion(null);
+                        setNewProveedorCiudad(null);
+                        setProveedorCitySearch("");
+                        setCreateProveedorOpen(true); 
+                      }}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Imagen */}
+              <div className="grid gap-2">
+                <Label>Imagen del Producto</Label>
+                <div className="border-2 border-dashed rounded-lg p-4 text-center">
+                  {formImagenPreview ? (
+                    <div className="w-24 h-24 mx-auto rounded-lg bg-white flex items-center justify-center overflow-hidden border">
+                      <img src={formImagenPreview} alt="Preview" className="max-w-full max-h-full" />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 mx-auto rounded-lg bg-muted flex items-center justify-center mb-2">
+                      <Package className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {formImagen ? formImagen.name : "Selecciona una imagen PNG o JPG"}
+                  </p>
+                  <input
+                    type="file"
+                    accept=".png,.jpg,.jpeg"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setFormImagen(file);
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          setFormImagenPreview(event.target?.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="hidden"
+                    id="imagen-input"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById("imagen-input")?.click()}
+                    className="mt-2"
+                  >
+                    Seleccionar Imagen
+                  </Button>
+                </div>
+              </div>
+
+              {/* Campos Petshop */}
+              {empresa?.tipoEmpresa === "Petshop" && (
+                <>
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="font-semibold text-sm mb-4">Información Petshop</h3>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Indicaciones/Contraindicaciones</Label>
+                    <Input value={formIndicaciones} onChange={(e) => setFormIndicaciones(e.target.value)} placeholder="Indicaciones" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Modo de Uso</Label>
+                    <Input value={formModoUso} onChange={(e) => setFormModoUso(e.target.value)} placeholder="Modo de uso" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Dosificación</Label>
+                    <Input value={formDosificacion} onChange={(e) => setFormDosificacion(e.target.value)} placeholder="Dosificación" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Análisis</Label>
+                    <Input value={formAnalisis} onChange={(e) => setFormAnalisis(e.target.value)} placeholder="Análisis" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Ingredientes</Label>
+                    <Input value={formIngredientes} onChange={(e) => setFormIngredientes(e.target.value)} placeholder="Ingredientes" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Precauciones</Label>
+                    <Input value={formPrecauciones} onChange={(e) => setFormPrecauciones(e.target.value)} placeholder="Precauciones" />
+                  </div>
+                </>
+              )}
+
+              {createError && <div className="text-sm text-destructive">{createError}</div>}
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetFormProducto(); }} disabled={creatingProducto}>
+                Cancelar
+              </Button>
+              <Button onClick={async () => {
+                setCreateError("");
+                if (!formNombre) { setCreateError("Nombre es requerido"); return; }
+                if (!formPrecio) { setCreateError("Precio es requerido"); return; }
+                if (!formStock) { setCreateError("Stock es requerido"); return; }
+                if (!formCategoriaId) { setCreateError("Categoría es requerida"); return; }
+                
+                setCreatingProducto(true);
+                try {
+                  let imagenUrl = editingProducto?.imagen || null;
+                  if (formImagen) {
+                    setUploadingImagen(true);
+                    imagenUrl = await uploadProductoImagen(formImagen);
+                    setUploadingImagen(false);
+                  }
+
+                  const dataObj: any = {
+                    nombre: formNombre,
+                    descripcion: formDescripcion || null,
+                    precio: Number(formPrecio),
+                    precio_compra_coniva: formPrecioCompra ? Number(formPrecioCompra) : null,
+                    stock: formStock ? Number(formStock) : 0,
+                    categoria_id: formCategoriaId,
+                    proveedor: formProveedorId || null,
+                    imagen: imagenUrl || null,
+                    activo: true,
+                  };
+
+                  if (empresa?.tipoEmpresa === "Petshop") {
+                    dataObj.indicacionescontraindicaciones = formIndicaciones || null;
+                    dataObj.mododeuso = formModoUso || null;
+                    dataObj.dosificacion = formDosificacion || null;
+                    dataObj.analisis = formAnalisis || null;
+                    dataObj.ingredientes = formIngredientes || null;
+                    dataObj.precauciones = formPrecauciones || null;
+                  }
+
+                  if (editingProducto) {
+                    // Actualizar producto existente
+                    const { error } = await supabase
+                      .from("Producto")
+                      .update(dataObj)
+                      .eq("id", editingProducto.id);
+                    
+                    if (error) {
+                      console.error("Error actualizando producto", error);
+                      setCreateError(error.message || "Error actualizando producto");
+                      return;
+                    }
+                  } else {
+                    // Crear nuevo producto
+                    dataObj.empresa = empresa?.id || null;
+                    const { error } = await supabase.from("Producto").insert([dataObj]);
+                    if (error) {
+                      console.error("Error creando producto", error);
+                      setCreateError(error.message || "Error creando producto");
+                      return;
+                    }
+                  }
+
+                  resetFormProducto();
+                  setIsDialogOpen(false);
+                  setEditingProducto(null);
+                  await recargarProductos();
+                } catch (e: any) {
+                  console.error(e);
+                  setCreateError(e?.message || "Error desconocido");
+                } finally {
+                  setCreatingProducto(false);
+                }
+              }} disabled={creatingProducto || uploadingImagen}>
+                {creatingProducto ? "Guardando..." : (editingProducto ? "Actualizar Producto" : "Guardar Producto")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         {selectedSection === "productos" && (
           <>
         {/* Header */}
@@ -739,320 +1046,16 @@ export default function Productos() {
             <h1 className="page-header">Productos</h1>
             <p className="page-subtitle mt-1">Gestiona tu catálogo de productos y servicios</p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" onClick={resetFormProducto}>
-                <Plus className="w-4 h-4" />
-                Nuevo Producto
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{editingProducto ? "Editar Producto" : "Agregar Nuevo Producto"}</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                {/* Campos básicos */}
-                <div className="grid gap-2">
-                  <Label>Nombre del Producto</Label>
-                  <Input value={formNombre} onChange={(e) => setFormNombre(e.target.value)} placeholder="Nombre" />
-                </div>
-                
-                <div className="grid gap-2">
-                  <Label>Descripción</Label>
-                  <Input value={formDescripcion} onChange={(e) => setFormDescripcion(e.target.value)} placeholder="Descripción" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Precio de Venta</Label>
-                    <Input 
-                      type="text" 
-                      value={formPrecio} 
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9.]/g, '');
-                        if (val === '' || !isNaN(parseFloat(val))) setFormPrecio(val);
-                      }}
-                      onKeyPress={(e) => {
-                        if (!/[0-9.]/.test(e.key)) e.preventDefault();
-                      }}
-                      placeholder="$0" 
-                      inputMode="decimal" 
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Precio Compra c/IVA</Label>
-                    <Input 
-                      type="text" 
-                      value={formPrecioCompra} 
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9.]/g, '');
-                        if (val === '' || !isNaN(parseFloat(val))) setFormPrecioCompra(val);
-                      }}
-                      onKeyPress={(e) => {
-                        if (!/[0-9.]/.test(e.key)) e.preventDefault();
-                      }}
-                      placeholder="$0" 
-                      inputMode="decimal" 
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Stock</Label>
-                  <Input 
-                    type="text" 
-                    value={formStock} 
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/[^0-9]/g, '');
-                      if (val === '' || !isNaN(parseInt(val))) setFormStock(val);
-                    }}
-                    onKeyPress={(e) => {
-                      if (!/[0-9]/.test(e.key)) e.preventDefault();
-                    }}
-                    placeholder="0" 
-                    inputMode="numeric" 
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Categoría</Label>
-                    <div className="flex gap-2">
-                      <Select value={formCategoriaId ? String(formCategoriaId) : ""} onValueChange={(v) => setFormCategoriaId(v ? Number(v) : null)}>
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Seleccionar categoría" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <div className="p-2">
-                            <Input 
-                              placeholder="Buscar categoría..." 
-                              value={categoriaSearch} 
-                              onChange={(e) => setCategoriSearch(e.target.value)} 
-                            />
-                          </div>
-                          <div className="max-h-56 overflow-auto">
-                            {filteredCategorias.map((c) => (
-                              <SelectItem key={c.id} value={String(c.id)}>
-                                {c.nombre}
-                              </SelectItem>
-                            ))}
-                          </div>
-                        </SelectContent>
-                      </Select>
-                      <Button 
-                        variant="outline" 
-                        size="icon"
-                        onClick={() => { setNewCategoriaName(""); setCreateCategoriaOpen(true); }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Proveedor</Label>
-                    <div className="flex gap-2">
-                      <Select value={formProveedorId ? String(formProveedorId) : ""} onValueChange={(v) => setFormProveedorId(v ? Number(v) : null)}>
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Seleccionar proveedor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <div className="p-2">
-                            <Input 
-                              placeholder="Buscar proveedor..." 
-                              value={proveedorSearch} 
-                              onChange={(e) => setProveedorSearch(e.target.value)} 
-                            />
-                          </div>
-                          <div className="max-h-56 overflow-auto">
-                            {filteredProveedores.map((p) => (
-                              <SelectItem key={p.id} value={String(p.id)}>
-                                {p.razonsocial}
-                              </SelectItem>
-                            ))}
-                          </div>
-                        </SelectContent>
-                      </Select>
-                      <Button 
-                        variant="outline" 
-                        size="icon"
-                        onClick={() => { 
-                          setNewProveedorName("");
-                          setNewProveedorRun("");
-                          setNewProveedorDv("");
-                          setNewProveedorGiro("");
-                          setNewProveedorNumContacto("");
-                          setNewProveedorDireccion("");
-                          setNewProveedorRegion(null);
-                          setNewProveedorCiudad(null);
-                          setProveedorCitySearch("");
-                          setCreateProveedorOpen(true); 
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Imagen */}
-                <div className="grid gap-2">
-                  <Label>Imagen del Producto</Label>
-                  <div className="border-2 border-dashed rounded-lg p-4 text-center">
-                    {formImagenPreview ? (
-                      <div className="w-24 h-24 mx-auto rounded-lg bg-white flex items-center justify-center overflow-hidden border">
-                        <img src={formImagenPreview} alt="Preview" className="max-w-full max-h-full" />
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 mx-auto rounded-lg bg-muted flex items-center justify-center mb-2">
-                        <Package className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {formImagen ? formImagen.name : "Selecciona una imagen PNG o JPG"}
-                    </p>
-                    <input
-                      type="file"
-                      accept=".png,.jpg,.jpeg"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setFormImagen(file);
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            setFormImagenPreview(event.target?.result as string);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                      className="hidden"
-                      id="imagen-input"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => document.getElementById("imagen-input")?.click()}
-                      className="mt-2"
-                    >
-                      Seleccionar Imagen
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Campos Petshop */}
-                {empresa?.tipoEmpresa === "Petshop" && (
-                  <>
-                    <div className="border-t pt-4 mt-4">
-                      <h3 className="font-semibold text-sm mb-4">Información Petshop</h3>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Indicaciones/Contraindicaciones</Label>
-                      <Input value={formIndicaciones} onChange={(e) => setFormIndicaciones(e.target.value)} placeholder="Indicaciones" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Modo de Uso</Label>
-                      <Input value={formModoUso} onChange={(e) => setFormModoUso(e.target.value)} placeholder="Modo de uso" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Dosificación</Label>
-                      <Input value={formDosificacion} onChange={(e) => setFormDosificacion(e.target.value)} placeholder="Dosificación" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Análisis</Label>
-                      <Input value={formAnalisis} onChange={(e) => setFormAnalisis(e.target.value)} placeholder="Análisis" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Ingredientes</Label>
-                      <Input value={formIngredientes} onChange={(e) => setFormIngredientes(e.target.value)} placeholder="Ingredientes" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Precauciones</Label>
-                      <Input value={formPrecauciones} onChange={(e) => setFormPrecauciones(e.target.value)} placeholder="Precauciones" />
-                    </div>
-                  </>
-                )}
-
-                {createError && <div className="text-sm text-destructive">{createError}</div>}
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetFormProducto(); }} disabled={creatingProducto}>
-                  Cancelar
-                </Button>
-                <Button onClick={async () => {
-                  setCreateError("");
-                  if (!formNombre) { setCreateError("Nombre es requerido"); return; }
-                  if (!formPrecio) { setCreateError("Precio es requerido"); return; }
-                  if (!formStock) { setCreateError("Stock es requerido"); return; }
-                  if (!formCategoriaId) { setCreateError("Categoría es requerida"); return; }
-                  
-                  setCreatingProducto(true);
-                  try {
-                    let imagenUrl = editingProducto?.imagen || null;
-                    if (formImagen) {
-                      setUploadingImagen(true);
-                      imagenUrl = await uploadProductoImagen(formImagen);
-                      setUploadingImagen(false);
-                    }
-
-                    const dataObj: any = {
-                      nombre: formNombre,
-                      descripcion: formDescripcion || null,
-                      precio: Number(formPrecio),
-                      precio_compra_coniva: formPrecioCompra ? Number(formPrecioCompra) : null,
-                      stock: formStock ? Number(formStock) : 0,
-                      categoria_id: formCategoriaId,
-                      proveedor: formProveedorId || null,
-                      imagen: imagenUrl || null,
-                      activo: true,
-                    };
-
-                    if (empresa?.tipoEmpresa === "Petshop") {
-                      dataObj.indicacionescontraindicaciones = formIndicaciones || null;
-                      dataObj.mododeuso = formModoUso || null;
-                      dataObj.dosificacion = formDosificacion || null;
-                      dataObj.analisis = formAnalisis || null;
-                      dataObj.ingredientes = formIngredientes || null;
-                      dataObj.precauciones = formPrecauciones || null;
-                    }
-
-                    if (editingProducto) {
-                      // Actualizar producto existente
-                      const { error } = await supabase
-                        .from("Producto")
-                        .update(dataObj)
-                        .eq("id", editingProducto.id);
-                      
-                      if (error) {
-                        console.error("Error actualizando producto", error);
-                        setCreateError(error.message || "Error actualizando producto");
-                        return;
-                      }
-                    } else {
-                      // Crear nuevo producto
-                      dataObj.empresa = empresa?.id || null;
-                      const { error } = await supabase.from("Producto").insert([dataObj]);
-                      if (error) {
-                        console.error("Error creando producto", error);
-                        setCreateError(error.message || "Error creando producto");
-                        return;
-                      }
-                    }
-
-                    resetFormProducto();
-                    setIsDialogOpen(false);
-                    setEditingProducto(null);
-                    await recargarProductos();
-                  } catch (e: any) {
-                    console.error(e);
-                    setCreateError(e?.message || "Error desconocido");
-                  } finally {
-                    setCreatingProducto(false);
-                  }
-                }} disabled={creatingProducto || uploadingImagen}>
-                  {creatingProducto ? "Guardando..." : (editingProducto ? "Actualizar Producto" : "Guardar Producto")}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button
+            className="gap-2"
+            onClick={() => {
+              resetFormProducto();
+              setIsDialogOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo Producto
+          </Button>
         </div>
 
         {/* Search */}
@@ -2016,138 +2019,26 @@ export default function Productos() {
         )}
 
         {/* Modal Ingreso Inventario */}
-        <Dialog open={inventarioIngresoOpen} onOpenChange={setInventarioIngresoOpen}>
-          <DialogContent className="sm:max-w-[400px]">
-            <DialogHeader>
-              <DialogTitle>Ingreso de Inventario</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label>Producto</Label>
-                <Input value={inventarioIngresoProducto?.nombre || ""} disabled />
-              </div>
-              <div className="grid gap-2">
-                <Label>Cantidad</Label>
-                <Input
-                  type="text"
-                  value={inventarioIngresoCantidad}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9]/g, "");
-                    setInventarioIngresoCantidad(val);
-                  }}
-                  onKeyPress={(e) => {
-                    if (!/[0-9]/.test(e.key) && e.key !== "Enter") e.preventDefault();
-                    if (e.key === "Enter") guardarIngresoInventario();
-                  }}
-                  placeholder="0"
-                  inputMode="numeric"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Precio Compra</Label>
-                <Input
-                  type="text"
-                  value={inventarioIngresoPrecioCompra}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9.]/g, "");
-                    if (val === "" || !isNaN(parseFloat(val))) {
-                      setInventarioIngresoPrecioCompra(val);
-                    }
-                  }}
-                  onKeyPress={(e) => {
-                    if (!/[0-9.]/.test(e.key) && e.key !== "Enter") e.preventDefault();
-                    if (e.key === "Enter") guardarIngresoInventario();
-                  }}
-                  placeholder="$0"
-                  inputMode="decimal"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setInventarioIngresoOpen(false);
-                  setInventarioIngresoProducto(null);
-                  setInventarioIngresoCantidad("");
-                  setInventarioIngresoPrecioCompra("");
-                }}
-                disabled={inventarioIngresoLoading}
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={guardarIngresoInventario}
-                disabled={inventarioIngresoLoading || !inventarioIngresoCantidad}
-              >
-                {inventarioIngresoLoading ? "Guardando..." : "Guardar"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <IngresoInventarioDialog
+          open={inventarioIngresoOpen}
+          onOpenChange={setInventarioIngresoOpen}
+          producto={inventarioIngresoProducto}
+          cantidad={inventarioIngresoCantidad}
+          precioCompra={inventarioIngresoPrecioCompra}
+          loading={inventarioIngresoLoading}
+          onCantidadChange={setInventarioIngresoCantidad}
+          onPrecioCompraChange={setInventarioIngresoPrecioCompra}
+          onSave={guardarIngresoInventario}
+          onCancel={() => {
+            setInventarioIngresoOpen(false);
+            setInventarioIngresoProducto(null);
+            setInventarioIngresoCantidad("");
+            setInventarioIngresoPrecioCompra("");
+          }}
+        />
 
       </div>
       </div>
     </AppLayout>
-  );
-}
-
-// Al final del archivo:
-function MenuAcciones({ product, onEdit, onDelete }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(true)}>
-        <MoreHorizontal className="w-5 h-5" />
-      </Button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden bg-black/40" onClick={() => setOpen(false)}>
-          <div className="bg-card rounded-t-xl w-full max-w-sm mx-auto p-6 pb-4 animate-fade-in-up" onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col gap-2">
-              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onEdit(product); }}>
-                <Edit className="w-4 h-4" /> Editar
-              </Button>
-              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); onDelete(product); }}>
-                <Trash2 className="w-4 h-4" /> Eliminar
-              </Button>
-            </div>
-            <Button variant="outline" className="w-full mt-4" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function MenuAccionesInventario({ product, onEdit, onDelete, onIngreso }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(true)}>
-        <MoreHorizontal className="w-5 h-5" />
-      </Button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden bg-black/40" onClick={() => setOpen(false)}>
-          <div className="bg-card rounded-t-xl w-full max-w-sm mx-auto p-6 pb-4 animate-fade-in-up" onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col gap-2">
-              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onEdit(product); }}>
-                <Edit className="w-4 h-4" /> Editar
-              </Button>
-              <Button variant="ghost" className="justify-start gap-2" onClick={() => { setOpen(false); onIngreso(product); }}>
-                <ClipboardList className="w-4 h-4" /> Ingreso
-              </Button>
-              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={() => { setOpen(false); onDelete(product); }}>
-                <Trash2 className="w-4 h-4" /> Eliminar
-              </Button>
-            </div>
-            <Button variant="outline" className="w-full mt-4" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
