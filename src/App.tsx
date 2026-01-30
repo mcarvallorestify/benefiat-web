@@ -12,6 +12,7 @@ import Configuracion from "./pages/Configuracion";
 import NotFound from "./pages/NotFound";
 import PuntoDeVenta from "./pages/PuntoDeVenta";
 import Login from "./pages/Login";
+import ReporteMensual from "./pages/ReporteMensual";
 import { RequireAuth } from "@/components/RequireAuth";
 
 const queryClient = new QueryClient();
@@ -69,6 +70,14 @@ const App = () => (
             element={
               <RequireAuth>
                 <PuntoDeVenta />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/reporte-mensual"
+            element={
+              <RequireAuth>
+                <ReporteMensual />
               </RequireAuth>
             }
           />

@@ -6,10 +6,12 @@ import { StatsCard } from "@/components/dashboard/StatsCard";
 import { RecentDocuments } from "@/components/dashboard/RecentDocuments";
 import { FileText, Receipt, Users, TrendingUp } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
   const { user } = useUser();
   const { empresa } = useEmpresa(user?.id);
+  const navigate = useNavigate();
 
   const [facturasCount, setFacturasCount] = useState<number | null>(null);
   const [boletasCount, setBoletasCount] = useState<number | null>(null);
@@ -141,6 +143,7 @@ export default function Dashboard() {
             changeType="positive"
             icon={TrendingUp}
             iconColor="bg-success/10 text-success"
+            onClick={() => navigate('/reporte-mensual')}
           />
           <StatsCard
             title="Facturas Emitidas"
