@@ -3,6 +3,7 @@ import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 import { useClientes } from "@/hooks/useClientes";
 import { supabase } from "@/lib/supabaseClient";
+import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, MoreHorizontal, Mail, Phone, Building2 } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Mail, Phone, Building2, FileText, Receipt } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -89,6 +90,12 @@ export default function Clientes() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clienteToDelete, setClienteToDelete] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
+  const [documentosOpen, setDocumentosOpen] = useState(false);
+  const [clienteDocumentos, setClienteDocumentos] = useState<any>(null);
+  const [documentos, setDocumentos] = useState<any[]>([]);
+  const [loadingDocumentos, setLoadingDocumentos] = useState(false);
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   const { user } = useUser();
   // Igual que en Productos: useEmpresa(user?.id)
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
@@ -278,6 +285,29 @@ export default function Clientes() {
       alert(e?.message || 'Error al eliminar cliente');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const loadDocumentos = async (cliente: any) => {
+    setClienteDocumentos(cliente);
+    setDocumentosOpen(true);
+    setLoadingDocumentos(true);
+    setFechaDesde("");
+    setFechaHasta("");
+    try {
+      const { data, error } = await supabase
+        .from('documentosEmitidos')
+        .select('*')
+        .eq('usuario', cliente.tablaID)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setDocumentos(data || []);
+    } catch (e) {
+      console.error('Error cargando documentos:', e);
+      setDocumentos([]);
+    } finally {
+      setLoadingDocumentos(false);
     }
   };
 
@@ -513,7 +543,7 @@ export default function Clientes() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => loadClienteToEdit(client)}>Editar</DropdownMenuItem>
-                      <DropdownMenuItem>Ver documentos</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => loadDocumentos(client)}>Ver documentos</DropdownMenuItem>
                       <DropdownMenuItem className="text-destructive" onClick={() => { setClienteToDelete(client); setDeleteConfirmOpen(true); }}>Eliminar</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -540,6 +570,112 @@ export default function Clientes() {
           </div>
         </div>
       </div>
+
+      <Dialog open={documentosOpen} onOpenChange={setDocumentosOpen}>
+        <DialogContent className="sm:max-w-[800px]">
+          <DialogHeader>
+            <DialogTitle>
+              Documentos de {clienteDocumentos?.nombre} {clienteDocumentos?.apellido}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex gap-4 pb-4 border-b">
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Desde</Label>
+              <Input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Hasta</Label>
+              <Input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setFechaDesde(""); setFechaHasta(""); }}
+              >
+                Limpiar
+              </Button>
+            </div>
+          </div>
+
+          <div className="max-h-[500px] overflow-hidden">
+            {loadingDocumentos ? (
+              <div className="text-center py-8 text-muted-foreground">Cargando documentos...</div>
+            ) : (() => {
+              const filtered = documentos.filter((doc) => {
+                const docDate = new Date(doc.created_at || doc.fecha || '');
+                if (fechaDesde && docDate < new Date(fechaDesde)) return false;
+                if (fechaHasta && docDate > new Date(fechaHasta + 'T23:59:59')) return false;
+                return true;
+              });
+              
+              return filtered.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No hay documentos para este cliente</div>
+              ) : (
+                <div className="divide-y divide-border overflow-y-auto max-h-[500px]">
+                  {filtered.map((doc) => {
+                    const isBoleta = Number(doc.tipoDocumento) === 39;
+                    const t = Number(doc.tipoDocumento);
+                    const label = t === 33 ? 'Factura electrónica' : t === 39 ? 'Boleta electrónica' : 'Documento';
+                    const dateStr = doc.created_at || doc.fecha || '';
+                    
+                    return (
+                      <div
+                        key={doc.id}
+                        className="p-4 hover:bg-muted/30 transition-colors flex items-center gap-4 cursor-pointer"
+                        onClick={() => doc.url && window.open(doc.url, "_blank")}
+                      >
+                        <div
+                          className={cn(
+                            "w-10 h-10 rounded-lg flex items-center justify-center",
+                            isBoleta ? "bg-secondary/20 text-secondary-foreground" : "bg-primary/10 text-primary"
+                          )}
+                        >
+                          {isBoleta ? <Receipt className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-foreground">{label}</span>
+                            {doc.folio && (
+                              <Badge variant="outline" className="text-xs">
+                                Folio: {doc.folio}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {dateStr ? new Date(dateStr).toLocaleDateString('es-CL') : 'Sin fecha'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-foreground">
+                            {formatCurrency(Number(doc.total || doc.monto || 0))}
+                          </p>
+                          {doc.estado && (
+                            <Badge variant={doc.estado === 'emitido' ? 'default' : 'secondary'} className="text-xs mt-1">
+                              {doc.estado}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
