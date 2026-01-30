@@ -42,7 +42,8 @@ import { Label } from "@/components/ui/label";
 import { Plus, Search, Package, Edit, Trash2, MoreHorizontal, Menu, FolderOpen, Users, ClipboardList } from "lucide-react";
 
 function formatCLP(value: number) {
-  return value?.toLocaleString('es-CL');
+  if (!value && value !== 0) return "$0";
+  return `$${value.toLocaleString('es-CL')}`;
 }
 
 export default function Productos() {
@@ -89,6 +90,8 @@ export default function Productos() {
   const [createProveedorOpen, setCreateProveedorOpen] = useState(false);
   const [newCategoriaName, setNewCategoriaName] = useState("");
   const [newProveedorName, setNewProveedorName] = useState("");
+  const [newProveedorRun, setNewProveedorRun] = useState("");
+  const [newProveedorDv, setNewProveedorDv] = useState("");
   const [newProveedorGiro, setNewProveedorGiro] = useState("");
   const [newProveedorNumContacto, setNewProveedorNumContacto] = useState("");
   const [newProveedorDireccion, setNewProveedorDireccion] = useState("");
@@ -109,6 +112,24 @@ export default function Productos() {
   const [editCategoriaName, setEditCategoriaName] = useState("");
   const [updatingCategoria, setUpdatingCategoria] = useState(false);
   
+  // Edición y eliminación de proveedores
+  const [editingProveedor, setEditingProveedor] = useState<any>(null);
+  const [deleteProveedorOpen, setDeleteProveedorOpen] = useState(false);
+  const [proveedorToDelete, setProveedorToDelete] = useState<any>(null);
+  const [deletingProveedor, setDeletingProveedor] = useState(false);
+  const [editProveedorOpen, setEditProveedorOpen] = useState(false);
+  const [editProveedorRazonSocial, setEditProveedorRazonSocial] = useState("");
+  const [editProveedorRun, setEditProveedorRun] = useState("");
+  const [editProveedorDv, setEditProveedorDv] = useState("");
+  const [editProveedorGiro, setEditProveedorGiro] = useState("");
+  const [editProveedorNumContacto, setEditProveedorNumContacto] = useState("");
+  const [editProveedorDireccion, setEditProveedorDireccion] = useState("");
+  const [editProveedorRegion, setEditProveedorRegion] = useState<number | null>(null);
+  const [editProveedorCiudad, setEditProveedorCiudad] = useState<number | null>(null);
+  const [updatingProveedor, setUpdatingProveedor] = useState(false);
+  const [ciudadesEditProveedor, setCiudadesEditProveedor] = useState<any[]>([]);
+  const [editProveedorCitySearch, setEditProveedorCitySearch] = useState("");
+  
   const filteredCategorias = categorias.filter((c) => {
     if (!categoriaSearch) return true;
     return (c.nombre || "").toString().toLowerCase().includes(categoriaSearch.toLowerCase());
@@ -116,17 +137,23 @@ export default function Productos() {
   
   const filteredProveedores = proveedores.filter((p) => {
     if (!proveedorSearch) return true;
-    return (p.nombre || "").toString().toLowerCase().includes(proveedorSearch.toLowerCase());
+    return (p.razonsocial || "").toString().toLowerCase().includes(proveedorSearch.toLowerCase());
   });
   
   const { user } = useUser();
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
   const { productos, loading: loadingProductos } = useProductos(empresa?.id);
+  const [productosData, setProductosData] = useState<any[]>([]);
+
+  // Sincronizar productos del hook con estado local
+  useEffect(() => {
+    setProductosData(productos);
+  }, [productos]);
 
   // Pagination
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const filteredProducts = productos.filter(
+  const filteredProducts = productosData.filter(
     (product) =>
       product.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.codigo?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -134,7 +161,24 @@ export default function Productos() {
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const productsPage = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
   // reset page when filter changes
-  useEffect(() => { setPage(1); }, [searchTerm, productos.length]);
+  useEffect(() => { setPage(1); }, [searchTerm, productosData.length]);
+
+  // Función para recargar productos
+  const recargarProductos = async () => {
+    if (!empresa?.id) return;
+    try {
+      const { data } = await supabase.from("Producto").select("*, Categoría(nombre)").eq("empresa", empresa.id);
+      if (data) {
+        const mapped = data.map((p: any) => ({
+          ...p,
+          categoria: p.Categoría?.nombre || "Sin categoría",
+        }));
+        setProductosData(mapped);
+      }
+    } catch (e) {
+      console.warn("Error recargando productos", e);
+    }
+  };
 
   // Cargar categorías
   useEffect(() => {
@@ -192,6 +236,21 @@ export default function Productos() {
     })();
     return () => { mounted = false; };
   }, [newProveedorRegion]);
+
+  // Cargar ciudades cuando cambia región al editar proveedor
+  useEffect(() => {
+    if (!editProveedorRegion) { setCiudadesEditProveedor([]); return; }
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from("ciudad").select("*").eq("region", editProveedorRegion);
+        if (mounted) setCiudadesEditProveedor((data as any[]) || []);
+      } catch (e) {
+        console.warn("Error cargando ciudades", e);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [editProveedorRegion]);
 
   const resetFormProducto = () => {
     setFormNombre("");
@@ -252,6 +311,7 @@ export default function Productos() {
       setFormCategoriaId(data[0].id);
       setNewCategoriaName("");
       setCreateCategoriaOpen(false);
+      await recargarProductos();
     } catch (e) {
       console.error("Error creando categoría", e);
     } finally {
@@ -265,6 +325,8 @@ export default function Productos() {
     try {
       const { data, error } = await supabase.from("proveedores").insert([{
         razonsocial: newProveedorName,
+        run: newProveedorRun || null,
+        dv: newProveedorDv || null,
         giro: newProveedorGiro || null,
         numContacto: newProveedorNumContacto || null,
         direccion: newProveedorDireccion || null,
@@ -278,6 +340,8 @@ export default function Productos() {
       setProveedores([...proveedores, data[0]]);
       setFormProveedorId(data[0].id);
       setNewProveedorName("");
+      setNewProveedorRun("");
+      setNewProveedorDv("");
       setNewProveedorGiro("");
       setNewProveedorNumContacto("");
       setNewProveedorDireccion("");
@@ -285,6 +349,7 @@ export default function Productos() {
       setNewProveedorCiudad(null);
       setProveedorCitySearch("");
       setCreateProveedorOpen(false);
+      await recargarProductos();
     } catch (e) {
       console.error("Error creando proveedor", e);
     } finally {
@@ -310,6 +375,7 @@ export default function Productos() {
       setEditCategoriaOpen(false);
       setEditingCategoria(null);
       setEditCategoriaName("");
+      await recargarProductos();
     } catch (e) {
       console.error("Error editando categoría", e);
     } finally {
@@ -332,11 +398,79 @@ export default function Productos() {
       setCategorias(categorias.filter(c => c.id !== categoriaToDelete.id));
       setDeleteCategoriaOpen(false);
       setCategoriaToDelete(null);
+      await recargarProductos();
     } catch (e: any) {
       console.error("Error eliminando categoría:", e);
       alert(e?.message || "Error al eliminar categoría");
     } finally {
       setDeletingCategoria(false);
+    }
+  };
+
+  const editarProveedor = async () => {
+    if (!editProveedorRazonSocial.trim() || !editingProveedor) return;
+    setUpdatingProveedor(true);
+    try {
+      const { error } = await supabase
+        .from("proveedores")
+        .update({
+          razonsocial: editProveedorRazonSocial,
+          run: editProveedorRun || null,
+          dv: editProveedorDv || null,
+          giro: editProveedorGiro || null,
+          numContacto: editProveedorNumContacto || null,
+          direccion: editProveedorDireccion || null,
+          ciudad: editProveedorCiudad || null,
+          region: editProveedorRegion || null,
+        })
+        .eq("id", editingProveedor.id);
+      
+      if (error) throw error;
+      
+      // Actualizar lista local
+      const { data } = await supabase.from("proveedores").select("*").eq("empresa", empresa?.id);
+      setProveedores((data as any[]) || []);
+      
+      setEditProveedorOpen(false);
+      setEditingProveedor(null);
+      setEditProveedorRazonSocial("");
+      setEditProveedorRun("");
+      setEditProveedorDv("");
+      setEditProveedorGiro("");
+      setEditProveedorNumContacto("");
+      setEditProveedorDireccion("");
+      setEditProveedorRegion(null);
+      setEditProveedorCiudad(null);
+      setEditProveedorCitySearch("");
+      await recargarProductos();
+    } catch (e) {
+      console.error("Error editando proveedor", e);
+    } finally {
+      setUpdatingProveedor(false);
+    }
+  };
+
+  const eliminarProveedor = async () => {
+    if (!proveedorToDelete) return;
+    setDeletingProveedor(true);
+    try {
+      const { error } = await supabase
+        .from("proveedores")
+        .delete()
+        .eq("id", proveedorToDelete.id);
+      
+      if (error) throw error;
+      
+      // Actualizar lista local
+      setProveedores(proveedores.filter(p => p.id !== proveedorToDelete.id));
+      setDeleteProveedorOpen(false);
+      setProveedorToDelete(null);
+      await recargarProductos();
+    } catch (e: any) {
+      console.error("Error eliminando proveedor:", e);
+      alert(e?.message || "Error al eliminar proveedor");
+    } finally {
+      setDeletingProveedor(false);
     }
   };
 
@@ -347,7 +481,7 @@ export default function Productos() {
     setFormPrecioCompra(producto.precio_compra_coniva ? String(producto.precio_compra_coniva) : "");
     setFormStock(producto.stock ? String(producto.stock) : "");
     setFormCategoriaId(producto.categoria_id || null);
-    setFormProveedorId(producto.proveedor_id || null);
+    setFormProveedorId(producto.proveedor || null);
     setFormImagenPreview(producto.imagen || null);
     setFormIndicaciones(producto.indicacionescontraindicaciones || "");
     setFormModoUso(producto.mododeuso || "");
@@ -364,7 +498,7 @@ export default function Productos() {
     setDeletingProducto(true);
     try {
       const { error } = await supabase
-        .from("productos")
+        .from("Producto")
         .delete()
         .eq("id", productoToDelete.id);
       
@@ -372,7 +506,7 @@ export default function Productos() {
       
       setDeleteProductoOpen(false);
       setProductoToDelete(null);
-      // La lista se actualizará automáticamente por el hook useProductos
+      await recargarProductos();
     } catch (e: any) {
       console.error("Error eliminando producto:", e);
       alert(e?.message || "Error al eliminar producto");
@@ -610,38 +744,13 @@ export default function Productos() {
                           </div>
                         </SelectContent>
                       </Select>
-                      <Dialog open={createCategoriaOpen} onOpenChange={setCreateCategoriaOpen}>
-                        <Button 
-                          variant="outline" 
-                          size="icon"
-                          onClick={() => { setNewCategoriaName(""); setCreateCategoriaOpen(true); }}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                        <DialogContent className="sm:max-w-[400px]">
-                          <DialogHeader>
-                            <DialogTitle>Nueva Categoría</DialogTitle>
-                          </DialogHeader>
-                          <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                              <Label>Nombre</Label>
-                              <Input 
-                                value={newCategoriaName} 
-                                onChange={(e) => setNewCategoriaName(e.target.value)}
-                                placeholder="Ej: Electrónica, Ropa, etc"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex justify-end gap-3">
-                            <Button variant="outline" onClick={() => setCreateCategoriaOpen(false)} disabled={creatingCategoria}>
-                              Cancelar
-                            </Button>
-                            <Button onClick={crearCategoria} disabled={creatingCategoria || !newCategoriaName.trim()}>
-                              {creatingCategoria ? "Creando..." : "Crear"}
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        onClick={() => { setNewCategoriaName(""); setCreateCategoriaOpen(true); }}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                   <div className="grid gap-2">
@@ -662,126 +771,30 @@ export default function Productos() {
                           <div className="max-h-56 overflow-auto">
                             {filteredProveedores.map((p) => (
                               <SelectItem key={p.id} value={String(p.id)}>
-                                {p.nombre}
+                                {p.razonsocial}
                               </SelectItem>
                             ))}
                           </div>
                         </SelectContent>
                       </Select>
-                      <Dialog open={createProveedorOpen} onOpenChange={setCreateProveedorOpen}>
-                        <Button 
-                          variant="outline" 
-                          size="icon"
-                          onClick={() => { 
-                            setNewProveedorName("");
-                            setNewProveedorGiro("");
-                            setNewProveedorNumContacto("");
-                            setNewProveedorDireccion("");
-                            setNewProveedorRegion(null);
-                            setNewProveedorCiudad(null);
-                            setProveedorCitySearch("");
-                            setCreateProveedorOpen(true); 
-                          }}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-                          <DialogHeader>
-                            <DialogTitle>Nuevo Proveedor</DialogTitle>
-                          </DialogHeader>
-                          <div className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                              <Label>Razón Social</Label>
-                              <Input 
-                                value={newProveedorName} 
-                                onChange={(e) => setNewProveedorName(e.target.value)}
-                                placeholder="Nombre del proveedor"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Giro</Label>
-                              <Input 
-                                value={newProveedorGiro} 
-                                onChange={(e) => setNewProveedorGiro(e.target.value)}
-                                placeholder="Ej: Distribuidor, Fabricante, etc"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Teléfono/Contacto</Label>
-                              <Input 
-                                type="text"
-                                value={newProveedorNumContacto} 
-                                onChange={(e) => {
-                                  const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 9);
-                                  setNewProveedorNumContacto(val);
-                                }}
-                                onKeyPress={(e) => {
-                                  if (!/[0-9]/.test(e.key)) e.preventDefault();
-                                }}
-                                maxLength={9}
-                                placeholder="912345678"
-                                inputMode="numeric"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Dirección</Label>
-                              <Input 
-                                value={newProveedorDireccion} 
-                                onChange={(e) => setNewProveedorDireccion(e.target.value)}
-                                placeholder="Dirección completa"
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="grid gap-2">
-                                <Label>Región</Label>
-                                <Select value={newProveedorRegion ? String(newProveedorRegion) : ""} onValueChange={(v) => { setNewProveedorRegion(v ? Number(v) : null); setNewProveedorCiudad(null); }}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Seleccionar región" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {regiones.map((r) => (
-                                      <SelectItem key={r.id} value={String(r.id)}>
-                                        {r.nombre}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="grid gap-2">
-                                <Label>Ciudad</Label>
-                                <Select value={newProveedorCiudad ? String(newProveedorCiudad) : ""} onValueChange={(v) => setNewProveedorCiudad(v ? Number(v) : null)}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Seleccionar ciudad" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <div className="p-2">
-                                      <Input placeholder="Buscar ciudad..." value={proveedorCitySearch} onChange={(e) => setProveedorCitySearch(e.target.value)} />
-                                    </div>
-                                    <div className="max-h-56 overflow-auto">
-                                      {ciudadesProveedor.filter((c) => {
-                                        if (!proveedorCitySearch) return true;
-                                        return (c.nombre || "").toString().toLowerCase().includes(proveedorCitySearch.toLowerCase());
-                                      }).map((c) => (
-                                        <SelectItem key={c.id} value={String(c.id)}>
-                                          {c.nombre}
-                                        </SelectItem>
-                                      ))}
-                                    </div>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex justify-end gap-3">
-                            <Button variant="outline" onClick={() => setCreateProveedorOpen(false)} disabled={creatingProveedor}>
-                              Cancelar
-                            </Button>
-                            <Button onClick={crearProveedor} disabled={creatingProveedor || !newProveedorName.trim()}>
-                              {creatingProveedor ? "Creando..." : "Crear"}
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        onClick={() => { 
+                          setNewProveedorName("");
+                          setNewProveedorRun("");
+                          setNewProveedorDv("");
+                          setNewProveedorGiro("");
+                          setNewProveedorNumContacto("");
+                          setNewProveedorDireccion("");
+                          setNewProveedorRegion(null);
+                          setNewProveedorCiudad(null);
+                          setProveedorCitySearch("");
+                          setCreateProveedorOpen(true); 
+                        }}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -892,7 +905,7 @@ export default function Productos() {
                       precio_compra_coniva: formPrecioCompra ? Number(formPrecioCompra) : null,
                       stock: formStock ? Number(formStock) : 0,
                       categoria_id: formCategoriaId,
-                      proveedor_id: formProveedorId || null,
+                      proveedor: formProveedorId || null,
                       imagen: imagenUrl || null,
                       activo: true,
                     };
@@ -909,7 +922,7 @@ export default function Productos() {
                     if (editingProducto) {
                       // Actualizar producto existente
                       const { error } = await supabase
-                        .from("productos")
+                        .from("Producto")
                         .update(dataObj)
                         .eq("id", editingProducto.id);
                       
@@ -921,7 +934,7 @@ export default function Productos() {
                     } else {
                       // Crear nuevo producto
                       dataObj.empresa = empresa?.id || null;
-                      const { error } = await supabase.from("productos").insert([dataObj]);
+                      const { error } = await supabase.from("Producto").insert([dataObj]);
                       if (error) {
                         console.error("Error creando producto", error);
                         setCreateError(error.message || "Error creando producto");
@@ -932,6 +945,7 @@ export default function Productos() {
                     resetFormProducto();
                     setIsDialogOpen(false);
                     setEditingProducto(null);
+                    await recargarProductos();
                   } catch (e: any) {
                     console.error(e);
                     setCreateError(e?.message || "Error desconocido");
@@ -1004,7 +1018,7 @@ export default function Productos() {
                               : "text-foreground"
                           }
                         >
-                          {product.stock}
+                          {product.stock.toLocaleString('es-CL')}
                         </span>
                       )}
                     </td>
@@ -1114,6 +1128,137 @@ export default function Productos() {
           </DialogContent>
         </Dialog>
 
+        {/* Modal Crear Proveedor - Global */}
+        <Dialog open={createProveedorOpen} onOpenChange={setCreateProveedorOpen}>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Nuevo Proveedor</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Razón Social</Label>
+                <Input 
+                  value={newProveedorName} 
+                  onChange={(e) => setNewProveedorName(e.target.value)}
+                  placeholder="Nombre del proveedor"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>RUN</Label>
+                  <Input 
+                    type="text"
+                    value={newProveedorRun} 
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setNewProveedorRun(val);
+                    }}
+                    onKeyPress={(e) => {
+                      if (!/[0-9]/.test(e.key)) e.preventDefault();
+                    }}
+                    placeholder="12345678"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>DV</Label>
+                  <Input 
+                    type="text"
+                    value={newProveedorDv} 
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase().slice(0, 1);
+                      if (val === '' || /^[0-9K]$/.test(val)) setNewProveedorDv(val);
+                    }}
+                    maxLength={1}
+                    placeholder="K"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Giro</Label>
+                <Input 
+                  value={newProveedorGiro} 
+                  onChange={(e) => setNewProveedorGiro(e.target.value)}
+                  placeholder="Ej: Distribuidor, Fabricante, etc"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Teléfono/Contacto</Label>
+                <Input 
+                  type="text"
+                  value={newProveedorNumContacto} 
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 9);
+                    setNewProveedorNumContacto(val);
+                  }}
+                  onKeyPress={(e) => {
+                    if (!/[0-9]/.test(e.key)) e.preventDefault();
+                  }}
+                  maxLength={9}
+                  placeholder="912345678"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Dirección</Label>
+                <Input 
+                  value={newProveedorDireccion} 
+                  onChange={(e) => setNewProveedorDireccion(e.target.value)}
+                  placeholder="Dirección completa"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Región</Label>
+                  <Select value={newProveedorRegion ? String(newProveedorRegion) : ""} onValueChange={(v) => { setNewProveedorRegion(v ? Number(v) : null); setNewProveedorCiudad(null); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar región" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {regiones.map((r) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Ciudad</Label>
+                  <Select value={newProveedorCiudad ? String(newProveedorCiudad) : ""} onValueChange={(v) => setNewProveedorCiudad(v ? Number(v) : null)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar ciudad" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="p-2">
+                        <Input placeholder="Buscar ciudad..." value={proveedorCitySearch} onChange={(e) => setProveedorCitySearch(e.target.value)} />
+                      </div>
+                      <div className="max-h-56 overflow-auto">
+                        {ciudadesProveedor.filter((c) => {
+                          if (!proveedorCitySearch) return true;
+                          return (c.nombre || "").toString().toLowerCase().includes(proveedorCitySearch.toLowerCase());
+                        }).map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>
+                            {c.nombre}
+                          </SelectItem>
+                        ))}
+                      </div>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setCreateProveedorOpen(false)} disabled={creatingProveedor}>
+                Cancelar
+              </Button>
+              <Button onClick={crearProveedor} disabled={creatingProveedor || !newProveedorName.trim()}>
+                {creatingProveedor ? "Creando..." : "Crear"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Sección Categorías */}
         {selectedSection === "categorias" && (
           <>
@@ -1151,7 +1296,7 @@ export default function Productos() {
                       </td>
                       <td className="p-4 text-center">
                         <Badge variant="secondary">
-                          {productos.filter(p => p.categoria_id === categoria.id).length}
+                          {productosData.filter(p => p.categoria_id === categoria.id).length}
                         </Badge>
                       </td>
                       <td className="p-4 text-center">
@@ -1234,6 +1379,268 @@ export default function Productos() {
                   </AlertDialogCancel>
                   <AlertDialogAction onClick={eliminarCategoria} disabled={deletingCategoria} className="bg-destructive hover:bg-destructive/90">
                     {deletingCategoria ? "Eliminando..." : "Eliminar"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        )}
+
+        {/* Sección Proveedores */}
+        {selectedSection === "proveedores" && (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="page-header">Proveedores</h1>
+                <p className="page-subtitle mt-1">Gestiona tus proveedores y sus datos de contacto</p>
+              </div>
+              <Button className="gap-2" onClick={() => { 
+                setNewProveedorName("");
+                setNewProveedorRun("");
+                setNewProveedorDv("");
+                setNewProveedorGiro("");
+                setNewProveedorNumContacto("");
+                setNewProveedorDireccion("");
+                setNewProveedorRegion(null);
+                setNewProveedorCiudad(null);
+                setProveedorCitySearch("");
+                setCreateProveedorOpen(true); 
+              }}>
+                <Plus className="w-4 h-4" />
+                Nuevo Proveedor
+              </Button>
+            </div>
+
+            {/* Tabla de Proveedores */}
+            <div className="bg-card rounded-xl border border-border overflow-x-auto animate-fade-in">
+              <table className="w-full">
+                <thead>
+                  <tr className="table-header">
+                    <th className="text-left p-4">Razón Social</th>
+                    <th className="text-left p-4 hidden md:table-cell">Giro</th>
+                    <th className="text-left p-4 hidden lg:table-cell">Contacto</th>
+                    <th className="text-left p-4 hidden lg:table-cell">Ubicación</th>
+                    <th className="text-center p-4">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {proveedores.map((proveedor) => {
+                    const ciudadData = proveedor.ciudad ? ciudadesProveedor.find(c => c.id === proveedor.ciudad) || ciudadesEditProveedor.find(c => c.id === proveedor.ciudad) : null;
+                    const regionData = proveedor.region ? regiones.find(r => r.id === proveedor.region) : null;
+                    return (
+                      <tr key={proveedor.id} className="table-row">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <Users className="w-5 h-5 text-primary" />
+                            </div>
+                            <span className="font-medium text-foreground">{proveedor.razonsocial}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 hidden md:table-cell">
+                          <span className="text-sm text-muted-foreground">{proveedor.giro || "-"}</span>
+                        </td>
+                        <td className="p-4 hidden lg:table-cell">
+                          <span className="text-sm text-muted-foreground">{proveedor.numContacto || "-"}</span>
+                        </td>
+                        <td className="p-4 hidden lg:table-cell">
+                          <span className="text-sm text-muted-foreground">
+                            {ciudadData?.nombre || regionData?.nombre || "-"}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setEditingProveedor(proveedor);
+                                setEditProveedorRazonSocial(proveedor.razonsocial || "");
+                                setEditProveedorRun(proveedor.run || "");
+                                setEditProveedorDv(proveedor.dv || "");
+                                setEditProveedorGiro(proveedor.giro || "");
+                                setEditProveedorNumContacto(proveedor.numContacto || "");
+                                setEditProveedorDireccion(proveedor.direccion || "");
+                                setEditProveedorRegion(proveedor.region || null);
+                                setEditProveedorCiudad(proveedor.ciudad || null);
+                                setEditProveedorCitySearch("");
+                                setEditProveedorOpen(true);
+                              }}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => {
+                                setProveedorToDelete(proveedor);
+                                setDeleteProveedorOpen(true);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {proveedores.length === 0 && (
+                <div className="p-8 text-center text-muted-foreground">
+                  No hay proveedores. Crea uno nuevo para comenzar.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Editar Proveedor */}
+            <Dialog open={editProveedorOpen} onOpenChange={setEditProveedorOpen}>
+              <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Editar Proveedor</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label>Razón Social</Label>
+                    <Input 
+                      value={editProveedorRazonSocial} 
+                      onChange={(e) => setEditProveedorRazonSocial(e.target.value)}
+                      placeholder="Nombre del proveedor"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>RUN</Label>
+                      <Input 
+                        type="text"
+                        value={editProveedorRun} 
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, '');
+                          setEditProveedorRun(val);
+                        }}
+                        onKeyPress={(e) => {
+                          if (!/[0-9]/.test(e.key)) e.preventDefault();
+                        }}
+                        placeholder="12345678"
+                        inputMode="numeric"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>DV</Label>
+                      <Input 
+                        type="text"
+                        value={editProveedorDv} 
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase().slice(0, 1);
+                          if (val === '' || /^[0-9K]$/.test(val)) setEditProveedorDv(val);
+                        }}
+                        maxLength={1}
+                        placeholder="K"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Giro</Label>
+                    <Input 
+                      value={editProveedorGiro} 
+                      onChange={(e) => setEditProveedorGiro(e.target.value)}
+                      placeholder="Ej: Distribuidor, Fabricante, etc"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Teléfono/Contacto</Label>
+                    <Input 
+                      type="text"
+                      value={editProveedorNumContacto} 
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 9);
+                        setEditProveedorNumContacto(val);
+                      }}
+                      onKeyPress={(e) => {
+                        if (!/[0-9]/.test(e.key)) e.preventDefault();
+                      }}
+                      maxLength={9}
+                      placeholder="912345678"
+                      inputMode="numeric"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Dirección</Label>
+                    <Input 
+                      value={editProveedorDireccion} 
+                      onChange={(e) => setEditProveedorDireccion(e.target.value)}
+                      placeholder="Dirección completa"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Región</Label>
+                      <Select value={editProveedorRegion ? String(editProveedorRegion) : ""} onValueChange={(v) => { setEditProveedorRegion(v ? Number(v) : null); setEditProveedorCiudad(null); }}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar región" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {regiones.map((r) => (
+                            <SelectItem key={r.id} value={String(r.id)}>
+                              {r.nombre}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Ciudad</Label>
+                      <Select value={editProveedorCiudad ? String(editProveedorCiudad) : ""} onValueChange={(v) => setEditProveedorCiudad(v ? Number(v) : null)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar ciudad" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <div className="p-2">
+                            <Input placeholder="Buscar ciudad..." value={editProveedorCitySearch} onChange={(e) => setEditProveedorCitySearch(e.target.value)} />
+                          </div>
+                          <div className="max-h-56 overflow-auto">
+                            {ciudadesEditProveedor.filter((c) => {
+                              if (!editProveedorCitySearch) return true;
+                              return (c.nombre || "").toString().toLowerCase().includes(editProveedorCitySearch.toLowerCase());
+                            }).map((c) => (
+                              <SelectItem key={c.id} value={String(c.id)}>
+                                {c.nombre}
+                              </SelectItem>
+                            ))}
+                          </div>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <Button variant="outline" onClick={() => { setEditProveedorOpen(false); setEditingProveedor(null); }} disabled={updatingProveedor}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={editarProveedor} disabled={updatingProveedor || !editProveedorRazonSocial.trim()}>
+                    {updatingProveedor ? "Guardando..." : "Guardar"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* AlertDialog Eliminar Proveedor */}
+            <AlertDialog open={deleteProveedorOpen} onOpenChange={setDeleteProveedorOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar proveedor?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción no se puede deshacer. El proveedor "{proveedorToDelete?.razonsocial}" será eliminado permanentemente.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => { setDeleteProveedorOpen(false); setProveedorToDelete(null); }}>
+                    Cancelar
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={eliminarProveedor} disabled={deletingProveedor} className="bg-destructive hover:bg-destructive/90">
+                    {deletingProveedor ? "Eliminando..." : "Eliminar"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
