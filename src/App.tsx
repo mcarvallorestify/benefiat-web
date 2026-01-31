@@ -13,6 +13,7 @@ import NotFound from "./pages/NotFound";
 import PuntoDeVenta from "./pages/PuntoDeVenta";
 import Login from "./pages/Login";
 import ReporteMensual from "./pages/ReporteMensual";
+import CrearCuenta from "./pages/CrearCuenta";
 import { RequireAuth } from "@/components/RequireAuth";
 
 const queryClient = new QueryClient();
@@ -80,6 +81,10 @@ const App = () => (
                 <ReporteMensual />
               </RequireAuth>
             }
+          />
+          <Route
+            path="/crear-cuenta"
+            element={<CrearCuenta />}
           />
           <Route path="*" element={<NotFound />} />
         </Routes>

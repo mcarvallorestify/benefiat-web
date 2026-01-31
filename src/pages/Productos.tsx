@@ -132,7 +132,7 @@ export default function Productos() {
   
   // Inventario
   const [inventarioEditMode, setInventarioEditMode] = useState(false);
-  const [editedInventario, setEditedInventario] = useState<{[key: number]: {stock?: string, precioCompra?: string, precioVenta?: string}}>({});
+  const [editedInventario, setEditedInventario] = useState<{[key: string]: {stock?: string, precioCompra?: string, precioVenta?: string}}>({});
   const [inventarioPage, setInventarioPage] = useState(1);
   const [inventarioSearch, setInventarioSearch] = useState("");
   const inventarioPageSize = 15;
@@ -151,6 +151,11 @@ export default function Productos() {
     if (!proveedorSearch) return true;
     return (p.razonsocial || "").toString().toLowerCase().includes(proveedorSearch.toLowerCase());
   });
+
+  const getCategoriaNombre = (producto: any) => {
+    const cat = categorias.find((c) => c.id === producto.categoria_id);
+    return cat?.nombre || "Sin categoría";
+  };
   
   const { user } = useUser();
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
@@ -532,7 +537,8 @@ export default function Productos() {
   };
 
   const actualizarInventarioProducto = async (productoId: number) => {
-    const cambios = editedInventario[productoId];
+    const productoIdStr = String(productoId);
+    const cambios = editedInventario[productoIdStr];
     if (!cambios) return;
 
     try {
@@ -551,7 +557,7 @@ export default function Productos() {
       // Limpiar edición
       setEditedInventario((prev) => {
         const updated = { ...prev };
-        delete updated[productoId];
+        delete updated[productoIdStr];
         return updated;
       });
 
@@ -1100,7 +1106,7 @@ export default function Productos() {
                       </div>
                     </td>
                     <td className="p-4 hidden md:table-cell">
-                      <Badge variant="secondary">{product.categoria}</Badge>
+                      <Badge variant="secondary">{getCategoriaNombre(product)}</Badge>
                     </td>
                     <td className="p-4 text-right font-semibold text-foreground">
                       {formatCLP(product.precio)}
@@ -1822,7 +1828,7 @@ export default function Productos() {
                       </thead>
                       <tbody>
                         {inventarioItems.map((producto) => {
-                          const isEditing = editedInventario[producto.id];
+                          const isEditing = editedInventario[String(producto.id)];
                           const stockValue = isEditing?.stock !== undefined ? isEditing.stock : String(producto.stock || 0);
                           const precioCompraValue = isEditing?.precioCompra !== undefined ? isEditing.precioCompra : String(producto.precio_compra_coniva || 0);
                           const precioVentaValue = isEditing?.precioVenta !== undefined ? isEditing.precioVenta : String(producto.precio || 0);
@@ -1841,7 +1847,7 @@ export default function Productos() {
                                 </div>
                               </td>
                               <td className="p-4 hidden md:table-cell">
-                                <Badge variant="secondary">{producto.categoria}</Badge>
+                                <Badge variant="secondary">{getCategoriaNombre(producto)}</Badge>
                               </td>
                               <td className="p-4 text-right">
                                 {inventarioEditMode ? (
@@ -1852,11 +1858,13 @@ export default function Productos() {
                                       const val = e.target.value.replace(/[^0-9]/g, '');
                                       setEditedInventario((prev) => ({
                                         ...prev,
-                                        [producto.id]: { ...prev[producto.id], stock: val }
+                                        [String(producto.id)]: { ...prev[String(producto.id)], stock: val }
                                       }));
                                     }}
-                                    onKeyPress={(e) => {
-                                      if (!/[0-9]/.test(e.key) && e.key !== 'Enter') e.preventDefault();
+                                    onKeyDown={(e) => {
+                                      if (!/[0-9]/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                                        e.preventDefault();
+                                      }
                                       if (e.key === 'Enter') {
                                         actualizarInventarioProducto(producto.id);
                                       }
@@ -1880,12 +1888,14 @@ export default function Productos() {
                                       if (val === '' || !isNaN(parseFloat(val))) {
                                         setEditedInventario((prev) => ({
                                           ...prev,
-                                          [producto.id]: { ...prev[producto.id], precioCompra: val }
+                                          [String(producto.id)]: { ...prev[String(producto.id)], precioCompra: val }
                                         }));
                                       }
                                     }}
-                                    onKeyPress={(e) => {
-                                      if (!/[0-9.]/.test(e.key) && e.key !== 'Enter') e.preventDefault();
+                                    onKeyDown={(e) => {
+                                      if (!/[0-9.]/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                                        e.preventDefault();
+                                      }
                                       if (e.key === 'Enter') {
                                         actualizarInventarioProducto(producto.id);
                                       }
@@ -1909,12 +1919,14 @@ export default function Productos() {
                                       if (val === '' || !isNaN(parseFloat(val))) {
                                         setEditedInventario((prev) => ({
                                           ...prev,
-                                          [producto.id]: { ...prev[producto.id], precioVenta: val }
+                                          [String(producto.id)]: { ...prev[String(producto.id)], precioVenta: val }
                                         }));
                                       }
                                     }}
-                                    onKeyPress={(e) => {
-                                      if (!/[0-9.]/.test(e.key) && e.key !== 'Enter') e.preventDefault();
+                                    onKeyDown={(e) => {
+                                      if (!/[0-9.]/.test(e.key) && e.key !== 'Enter' && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
+                                        e.preventDefault();
+                                      }
                                       if (e.key === 'Enter') {
                                         actualizarInventarioProducto(producto.id);
                                       }

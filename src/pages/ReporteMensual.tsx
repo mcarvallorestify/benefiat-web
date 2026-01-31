@@ -32,6 +32,7 @@ interface OrdenItem {
   nombreProducto: string | null;
   product_id: string | null;
   orden_id: string | null;
+  valorCompraProducto?: number | null;
 }
 
 interface Producto {
@@ -48,7 +49,7 @@ interface Categoria {
 
 interface Proveedor {
   id: number;
-  nombre: string;
+  razonsocial: string;
 }
 
 interface ReporteAgrupado {
@@ -57,6 +58,8 @@ interface ReporteAgrupado {
   cantidadProductos: number;
   totalVentas: number;
   detalles?: string;
+  totalCostos?: number;
+  porcentajeGanancia?: number;
 }
 
 const formatCLP = (value: number) => {
@@ -83,6 +86,7 @@ export default function ReporteMensual() {
   const [filtroCliente, setFiltroCliente] = useState("");
   const [filtroProducto, setFiltroProducto] = useState("");
   const [filtroProveedor, setFiltroProveedor] = useState("");
+  const [proveedorSearchReporte, setProveedorSearchReporte] = useState("");
   const [tipoAgrupacion, setTipoAgrupacion] = useState<"orden" | "producto" | "proveedor" | "categoria">("orden");
 
   // Datos
@@ -200,7 +204,7 @@ export default function ReporteMensual() {
 
     // Filtro por proveedor
     if (filtroProveedor) {
-      const proveedor = proveedores.find(p => p.nombre.toLowerCase().includes(filtroProveedor.toLowerCase()));
+      const proveedor = proveedores.find(p => p.razonsocial.toLowerCase().includes(filtroProveedor.toLowerCase()));
       if (proveedor) {
         const productosDelProveedor = productos.filter(p => p.proveedor === proveedor.id);
         const productosIds = productosDelProveedor.map(p => p.id);
@@ -229,14 +233,30 @@ export default function ReporteMensual() {
   const datosAgrupados = React.useMemo((): ReporteAgrupado[] => {
     const { ordenesFiltradas, itemsFiltrados } = datosFiltrados;
 
+    const calcularPorcentajeGanancia = (totalVentas: number, totalCostos: number): number => {
+      if (totalCostos === 0) return 0;
+      return ((totalVentas - totalCostos) / totalCostos) * 100;
+    };
+
     if (tipoAgrupacion === "orden") {
-      return ordenesFiltradas.map(orden => ({
-        nombre: `Orden #${orden.id.substring(0, 8)} - ${orden.nombre || 'Sin nombre'} ${orden.apellido || ''}`,
-        cantidadOrdenes: 1,
-        cantidadProductos: ordenItems.filter(i => i.orden_id === orden.id).reduce((s, i) => s + Number(i.cantidad || 0), 0),
-        totalVentas: Number(orden.monto || 0),
-        detalles: new Date(orden.created_at).toLocaleDateString('es-CL')
-      }));
+      return ordenesFiltradas.map(orden => {
+        const itemsDelOrden = ordenItems.filter(i => i.orden_id === orden.id);
+        const totalCostos = itemsDelOrden.reduce((s, i) => {
+          const costoPorItem = (i.valorCompraProducto || 0) * Number(i.cantidad || 0);
+          return s + costoPorItem;
+        }, 0);
+        const porcentajeGanancia = calcularPorcentajeGanancia(Number(orden.monto || 0), totalCostos);
+
+        return {
+          nombre: `Orden #${orden.id.substring(0, 8)} - ${orden.nombre || 'Sin nombre'} ${orden.apellido || ''}`,
+          cantidadOrdenes: 1,
+          cantidadProductos: itemsDelOrden.reduce((s, i) => s + Number(i.cantidad || 0), 0),
+          totalVentas: Number(orden.monto || 0),
+          totalCostos,
+          porcentajeGanancia,
+          detalles: new Date(orden.created_at).toLocaleDateString('es-CL')
+        };
+      });
     }
 
     if (tipoAgrupacion === "producto") {
@@ -249,13 +269,17 @@ export default function ReporteMensual() {
             nombre: nombreProd,
             cantidadOrdenes: 0,
             cantidadProductos: 0,
-            totalVentas: 0
+            totalVentas: 0,
+            totalCostos: 0,
+            porcentajeGanancia: 0
           });
         }
         const grupo = agrupado.get(nombreProd)!;
         grupo.cantidadOrdenes += 1;
         grupo.cantidadProductos += Number(item.cantidad || 0);
         grupo.totalVentas += Number(item.subtotal || 0);
+        grupo.totalCostos = (grupo.totalCostos || 0) + ((item.valorCompraProducto || 0) * Number(item.cantidad || 0));
+        grupo.porcentajeGanancia = calcularPorcentajeGanancia(grupo.totalVentas, grupo.totalCostos!);
       });
 
       return Array.from(agrupado.values()).sort((a, b) => b.totalVentas - a.totalVentas);
@@ -274,16 +298,20 @@ export default function ReporteMensual() {
 
         if (!agrupado.has(proveedor.id)) {
           agrupado.set(proveedor.id, {
-            nombre: proveedor.nombre,
+            nombre: proveedor.razonsocial,
             cantidadOrdenes: 0,
             cantidadProductos: 0,
-            totalVentas: 0
+            totalVentas: 0,
+            totalCostos: 0,
+            porcentajeGanancia: 0
           });
         }
         const grupo = agrupado.get(proveedor.id)!;
         grupo.cantidadOrdenes += 1;
         grupo.cantidadProductos += Number(item.cantidad || 0);
         grupo.totalVentas += Number(item.subtotal || 0);
+        grupo.totalCostos = (grupo.totalCostos || 0) + ((item.valorCompraProducto || 0) * Number(item.cantidad || 0));
+        grupo.porcentajeGanancia = calcularPorcentajeGanancia(grupo.totalVentas, grupo.totalCostos!);
       });
 
       return Array.from(agrupado.values()).sort((a, b) => b.totalVentas - a.totalVentas);
@@ -305,13 +333,17 @@ export default function ReporteMensual() {
             nombre: categoria.nombre,
             cantidadOrdenes: 0,
             cantidadProductos: 0,
-            totalVentas: 0
+            totalVentas: 0,
+            totalCostos: 0,
+            porcentajeGanancia: 0
           });
         }
         const grupo = agrupado.get(categoria.id)!;
         grupo.cantidadOrdenes += 1;
         grupo.cantidadProductos += Number(item.cantidad || 0);
         grupo.totalVentas += Number(item.subtotal || 0);
+        grupo.totalCostos = (grupo.totalCostos || 0) + ((item.valorCompraProducto || 0) * Number(item.cantidad || 0));
+        grupo.porcentajeGanancia = calcularPorcentajeGanancia(grupo.totalVentas, grupo.totalCostos!);
       });
 
       return Array.from(agrupado.values()).sort((a, b) => b.totalVentas - a.totalVentas);
@@ -322,14 +354,15 @@ export default function ReporteMensual() {
 
   const exportarCSV = () => {
     const headers = tipoAgrupacion === "orden" 
-      ? ["Orden", "Fecha", "Cantidad Productos", "Total Ventas"]
-      : ["Nombre", "Cantidad Órdenes", "Cantidad Productos", "Total Ventas"];
+      ? ["Orden", "Fecha", "Cantidad Productos", "Total Costos", "Total Ventas", "Ganancia %"]
+      : ["Nombre", "Cantidad Órdenes", "Cantidad Productos", "Total Costos", "Total Ventas", "Ganancia %"];
     
-    const rows = datosAgrupados.map(item => 
-      tipoAgrupacion === "orden"
-        ? [item.nombre, item.detalles || '', item.cantidadProductos, item.totalVentas]
-        : [item.nombre, item.cantidadOrdenes, item.cantidadProductos, item.totalVentas]
-    );
+    const rows = datosAgrupados.map(item => {
+      const porcentajeFormato = item.porcentajeGanancia !== undefined ? item.porcentajeGanancia.toFixed(2) : "0.00";
+      return tipoAgrupacion === "orden"
+        ? [item.nombre, item.detalles || '', item.cantidadProductos, item.totalCostos || 0, item.totalVentas, porcentajeFormato]
+        : [item.nombre, item.cantidadOrdenes, item.cantidadProductos, item.totalCostos || 0, item.totalVentas, porcentajeFormato];
+    });
 
     const csv = [
       headers.join(','),
@@ -439,12 +472,32 @@ export default function ReporteMensual() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="filtroProveedor">Proveedor</Label>
-                <Input
-                  id="filtroProveedor"
-                  placeholder="Buscar por proveedor..."
-                  value={filtroProveedor}
-                  onChange={(e) => setFiltroProveedor(e.target.value)}
-                />
+                <Select value={filtroProveedor} onValueChange={(v) => setFiltroProveedor(v)}>
+                  <SelectTrigger id="filtroProveedor">
+                    <SelectValue placeholder="Seleccionar proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <div className="p-2">
+                      <Input
+                        placeholder="Buscar proveedor..."
+                        value={proveedorSearchReporte}
+                        onChange={(e) => setProveedorSearchReporte(e.target.value)}
+                      />
+                    </div>
+                    <div className="max-h-56 overflow-auto">
+                      {proveedores
+                        .filter((p) => {
+                          if (!proveedorSearchReporte) return true;
+                          return (p.razonsocial || "").toString().toLowerCase().includes(proveedorSearchReporte.toLowerCase());
+                        })
+                        .map((p) => (
+                          <SelectItem key={p.id} value={p.razonsocial}>
+                            {p.razonsocial}
+                          </SelectItem>
+                        ))}
+                    </div>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -489,7 +542,9 @@ export default function ReporteMensual() {
                       {tipoAgrupacion === "orden" && <TableHead>Fecha</TableHead>}
                       {tipoAgrupacion !== "orden" && <TableHead className="text-right">Órdenes</TableHead>}
                       <TableHead className="text-right">Cant. Productos</TableHead>
+                      <TableHead className="text-right">Total Costos</TableHead>
                       <TableHead className="text-right">Total Ventas</TableHead>
+                      <TableHead className="text-right">Ganancia %</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -503,7 +558,11 @@ export default function ReporteMensual() {
                           <TableCell className="text-right">{item.cantidadOrdenes}</TableCell>
                         )}
                         <TableCell className="text-right">{item.cantidadProductos}</TableCell>
+                        <TableCell className="text-right">{formatCLP(item.totalCostos || 0)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCLP(item.totalVentas)}</TableCell>
+                        <TableCell className={`text-right font-semibold ${item.porcentajeGanancia! > 0 ? "text-green-600 dark:text-green-400" : item.porcentajeGanancia! < 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+                          {item.porcentajeGanancia?.toFixed(2) || "0.00"}%
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
