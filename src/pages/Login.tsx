@@ -26,8 +26,13 @@ export default function Login() {
       emailLogin = user + "74" + domain;
     }
     const { error } = await supabase.auth.signInWithPassword({ email: emailLogin, password });
-    if (error) setError(error.message);
-    else navigate("/");
+    if (error) {
+      setError(error.message);
+    } else {
+      sessionStorage.setItem("sucursal_modal_pending", "1");
+      localStorage.setItem("session_started_at", String(Date.now()));
+      navigate("/");
+    }
     setLoading(false);
   };
 
@@ -47,6 +52,7 @@ export default function Login() {
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
+            placeholder="correo@ejemplo.com"
             className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition bg-white"
             required
           />
@@ -57,6 +63,7 @@ export default function Login() {
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
             className="border-2 border-[#6EDCF8] focus:border-[#00679F] rounded-lg p-3 w-full text-lg transition bg-white"
             required
           />

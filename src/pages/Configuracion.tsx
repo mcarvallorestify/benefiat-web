@@ -3,10 +3,11 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Mail, Phone, MapPin, FileText, Save } from "lucide-react";
+import { Building2, Mail, Phone, MapPin, FileText, Save, Plus, Trash2, Users, Shield, Search } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
   Select,
@@ -17,11 +18,50 @@ import {
 } from "@/components/ui/select";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
+import { useSucursales } from "@/hooks/useSucursales";
 import { supabase } from "@/lib/supabaseClient";
+import { PlanesModal } from "@/components/PlanesModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+const PLANES_RESUMEN = [
+  {
+    planIds: [10, 11],
+    nombre: "Emprendedor",
+    descripcion: "Ideal para negocios que recién comienzan",
+    precioMensual: "15.990",
+    periodo: "/mes con iva",
+  },
+  {
+    planIds: [12, 13],
+    nombre: "Profesional",
+    descripcion: "Para negocios en crecimiento",
+    precioMensual: "20.990",
+    periodo: "/mes con iva",
+  },
+  {
+    planIds: [14, 15],
+    nombre: "Empresarial",
+    descripcion: "Para empresas con alto volumen",
+    precioMensual: "29.990",
+    periodo: "/mes con iva",
+  },
+];
 
 export default function Configuracion() {
   const { user } = useUser();
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
+  const { sucursales, planInfo, reloadSucursales } = useSucursales(empresa?.id);
+  const planActual = PLANES_RESUMEN.find((plan) =>
+    planInfo.planId !== null ? plan.planIds.includes(planInfo.planId) : false
+  );
 
   // form state
   const [rutEmpresa, setRutEmpresa] = useState("");
@@ -64,6 +104,20 @@ export default function Configuracion() {
   const [selectedPortadaFile, setSelectedPortadaFile] = useState<File | null>(null);
   const [portadaPreview, setPortadaPreview] = useState<string | null>(null);
   const [uploadingPortada, setUploadingPortada] = useState(false);
+
+  // Sucursales
+  const [openNuevaSucursal, setOpenNuevaSucursal] = useState(false);
+  const [nuevaSucursalNombre, setNuevaSucursalNombre] = useState("");
+  const [nuevaSucursalDireccion, setNuevaSucursalDireccion] = useState("");
+  const [creandoSucursal, setCreandoSucursal] = useState(false);
+  const [openPlanesModal, setOpenPlanesModal] = useState(false);
+
+  // Roles y Permisos
+  const [usuarios, setUsuarios] = useState<any[]>([]);
+  const [loadingUsuarios, setLoadingUsuarios] = useState(false);
+  const [editandoRol, setEditandoRol] = useState<string | null>(null);
+  const [nuevoRol, setNuevoRol] = useState("");
+  const [searchUsuarios, setSearchUsuarios] = useState("");
 
   useEffect(() => {
     if (!empresa) return;
@@ -148,6 +202,51 @@ export default function Configuracion() {
     })();
     return () => { mounted = false; };
   }, [empresa?.id]);
+
+  // Cargar usuarios para gestión de roles
+  useEffect(() => {
+    if (!empresa?.id) return;
+    let mounted = true;
+    setLoadingUsuarios(true);
+    supabase
+      .from("user")
+      .select("tablaID, nombre, apellido, email, run, dv, rol")
+      .eq("empresa", empresa.id)
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) {
+          console.error("Error cargando usuarios:", error);
+          toast({ title: "Error", description: "No se pudieron cargar los usuarios", variant: "destructive" });
+        } else {
+          setUsuarios(data || []);
+        }
+        setLoadingUsuarios(false);
+      });
+    return () => { mounted = false; };
+  }, [empresa?.id]);
+
+  const actualizarRolUsuario = async (tablaID: string, nuevoRol: string) => {
+    try {
+      const { error } = await supabase
+        .from("user")
+        .update({ rol: nuevoRol })
+        .eq("tablaID", tablaID);
+
+      if (error) throw error;
+
+      // Actualizar estado local
+      setUsuarios((prev) =>
+        prev.map((u) => (u.tablaID === tablaID ? { ...u, rol: nuevoRol } : u))
+      );
+
+      toast({ title: "Rol actualizado", description: "El rol del usuario se actualizó correctamente" });
+      setEditandoRol(null);
+      setNuevoRol("");
+    } catch (error: any) {
+      console.error("Error actualizando rol:", error);
+      toast({ title: "Error", description: error.message || "No se pudo actualizar el rol", variant: "destructive" });
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -500,7 +599,55 @@ export default function Configuracion() {
     } finally {
       setUploadingPortada(false);
     }
-  };;
+  };
+
+  const crearNuevaSucursal = async () => {
+    if (!nuevaSucursalNombre.trim()) {
+      toast({ title: "Nombre requerido", description: "Ingresa un nombre para la sucursal." });
+      return;
+    }
+    if (!empresa?.id) {
+      toast({ title: "Empresa no encontrada", description: "Primero configura tu empresa." });
+      return;
+    }
+
+    setCreandoSucursal(true);
+    try {
+      const { error } = await supabase.from("Sucursal").insert([{
+        empresa: empresa.id,
+        nombre: nuevaSucursalNombre,
+        direccion: nuevaSucursalDireccion || null,
+      }]);
+
+      if (error) throw error;
+
+      toast({ title: "Sucursal creada", description: "La nueva sucursal fue creada correctamente." });
+      setNuevaSucursalNombre("");
+      setNuevaSucursalDireccion("");
+      setOpenNuevaSucursal(false);
+      await reloadSucursales();
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: "Error", description: e?.message || "No se pudo crear la sucursal." });
+    } finally {
+      setCreandoSucursal(false);
+    }
+  };
+
+  const eliminarSucursal = async (sucursalId: number) => {
+    if (!confirm("¿Estás seguro de eliminar esta sucursal?")) return;
+
+    try {
+      const { error } = await supabase.from("Sucursal").delete().eq("id", sucursalId);
+      if (error) throw error;
+
+      toast({ title: "Sucursal eliminada", description: "La sucursal fue eliminada correctamente." });
+      await reloadSucursales();
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: "Error", description: e?.message || "No se pudo eliminar la sucursal." });
+    }
+  };
 
   const uploadCafBoletas = async () => {
     if (!selectedCafFile) {
@@ -567,6 +714,9 @@ export default function Configuracion() {
             <TabsTrigger value="empresa">Datos Empresa</TabsTrigger>
             <TabsTrigger value="facturacion">Facturación</TabsTrigger>
             <TabsTrigger value="documentos">Documentos</TabsTrigger>
+            <TabsTrigger value="sucursales">Sucursales</TabsTrigger>
+            <TabsTrigger value="roles">Roles y Permisos</TabsTrigger>
+            <TabsTrigger value="plan">Plan</TabsTrigger>
           </TabsList>
 
           <TabsContent value="empresa" className="space-y-6 animate-fade-in">
@@ -946,8 +1096,402 @@ export default function Configuracion() {
               </Button>
             </div>
           </TabsContent>
+
+          <TabsContent value="sucursales" className="space-y-6 animate-fade-in">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Building2 className="w-5 h-5 text-primary" />
+                      Gestión de Sucursales
+                    </CardTitle>
+                    <CardDescription>
+                      Tu plan permite {planInfo.maxSucursales === null ? "ilimitadas" : planInfo.maxSucursales} sucursales
+                    </CardDescription>
+                  </div>
+                  {planInfo.canCreateMore && (
+                    <Dialog open={openNuevaSucursal} onOpenChange={setOpenNuevaSucursal}>
+                      <DialogTrigger asChild>
+                        <Button className="gap-2">
+                          <Plus className="w-4 h-4" />
+                          Nueva Sucursal
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Crear Nueva Sucursal</DialogTitle>
+                          <DialogDescription>
+                            Ingresa los datos de la nueva sucursal
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label>Nombre de la Sucursal *</Label>
+                            <Input
+                              placeholder="Ej: Sucursal Centro"
+                              value={nuevaSucursalNombre}
+                              onChange={(e) => setNuevaSucursalNombre(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Dirección</Label>
+                            <Input
+                              placeholder="Ej: Av. Principal 123"
+                              value={nuevaSucursalDireccion}
+                              onChange={(e) => setNuevaSucursalDireccion(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setOpenNuevaSucursal(false)}>
+                            Cancelar
+                          </Button>
+                          <Button onClick={crearNuevaSucursal} disabled={creandoSucursal}>
+                            {creandoSucursal ? "Creando..." : "Crear Sucursal"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {sucursales.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No hay sucursales creadas
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {sucursales.map((suc) => (
+                      <div key={suc.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex-1">
+                          <h4 className="font-semibold">{suc.nombre || `Sucursal ${suc.id}`}</h4>
+                          {suc.direccion && (
+                            <p className="text-sm text-muted-foreground">{suc.direccion}</p>
+                          )}
+                        </div>
+                        {sucursales.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => eliminarSucursal(suc.id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!planInfo.canCreateMore && (
+                  <div className="mt-4 p-4 border border-primary/20 bg-primary/5 rounded-lg">
+                    <p className="text-sm font-medium mb-2">
+                      Has alcanzado el límite de sucursales para tu plan actual
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      ¿Necesitas más sucursales para tu negocio? Actualiza tu plan para obtener más ubicaciones.
+                    </p>
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => setOpenPlanesModal(true)}>
+                      Ver Planes Disponibles
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="roles" className="space-y-6 animate-fade-in">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-primary" />
+                  Gestión de Roles y Permisos
+                </CardTitle>
+                <CardDescription>
+                  Asigna roles a los usuarios de tu empresa para controlar sus permisos
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar usuarios..."
+                      value={searchUsuarios}
+                      onChange={(e) => setSearchUsuarios(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+
+                {loadingUsuarios ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Cargando usuarios...
+                  </div>
+                ) : usuarios.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold mb-2">No hay usuarios</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Los usuarios aparecerán aquí cuando se creen en el sistema
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {usuarios
+                      .filter((u) => {
+                        const search = searchUsuarios.toLowerCase();
+                        return (
+                          !search ||
+                          u.nombre?.toLowerCase().includes(search) ||
+                          u.apellido?.toLowerCase().includes(search) ||
+                          u.email?.toLowerCase().includes(search) ||
+                          u.run?.toString().includes(search)
+                        );
+                      })
+                      .map((usuario) => (
+                        <div
+                          key={usuario.tablaID}
+                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-semibold">
+                                {usuario.nombre} {usuario.apellido}
+                              </h4>
+                              <Badge
+                                variant={
+                                  usuario.rol === "Administrador"
+                                    ? "default"
+                                    : usuario.rol === "Vendedor"
+                                    ? "secondary"
+                                    : "outline"
+                                }
+                              >
+                                {usuario.rol || "Sin rol"}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{usuario.email}</p>
+                            {usuario.run && (
+                              <p className="text-xs text-muted-foreground">
+                                RUN: {usuario.run}-{usuario.dv}
+                              </p>
+                            )}
+                          </div>
+
+                          {editandoRol === usuario.tablaID ? (
+                            <div className="flex items-center gap-2">
+                              <Select
+                                value={nuevoRol}
+                                onValueChange={setNuevoRol}
+                              >
+                                <SelectTrigger className="w-[180px]">
+                                  <SelectValue placeholder="Seleccionar rol" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Administrador">Administrador</SelectItem>
+                                  <SelectItem value="Vendedor">Vendedor</SelectItem>
+                                  <SelectItem value="Contador">Contador</SelectItem>
+                                  <SelectItem value="Bodeguero">Bodeguero</SelectItem>
+                                  <SelectItem value="Cliente">Cliente</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                size="sm"
+                                onClick={() => actualizarRolUsuario(usuario.tablaID, nuevoRol)}
+                                disabled={!nuevoRol}
+                              >
+                                Guardar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditandoRol(null);
+                                  setNuevoRol("");
+                                }}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditandoRol(usuario.tablaID);
+                                setNuevoRol(usuario.rol || "");
+                              }}
+                            >
+                              Cambiar Rol
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                <div className="mt-6 p-4 border rounded-lg bg-muted/30">
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    Permisos por Rol
+                  </h4>
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="font-medium">Administrador</p>
+                      <p className="text-muted-foreground">
+                        Acceso completo a todas las funcionalidades del sistema
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium">Vendedor</p>
+                      <p className="text-muted-foreground">
+                        Acceso solo a Punto de Venta para realizar ventas
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium">Contador</p>
+                      <p className="text-muted-foreground">
+                        Acceso a reportes, documentos y configuración financiera
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium">Bodeguero</p>
+                      <p className="text-muted-foreground">
+                        Acceso a inventario, productos y punto de venta
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium">Cliente</p>
+                      <p className="text-muted-foreground">
+                        Acceso limitado como cliente del sistema
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="plan" className="space-y-6 animate-fade-in">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-primary" />
+                  Plan Actual
+                </CardTitle>
+                <CardDescription>
+                  Gestiona tu suscripción y actualiza tu plan
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {planActual ? (
+                  <>
+                    <div className="p-6 border rounded-lg bg-gradient-to-br from-primary/5 to-primary/10">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-2xl font-bold mb-1">
+                            {planActual.nombre || "Plan Actual"}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {planActual.descripcion || "Tu plan actual"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-3xl font-bold">
+                            ${planActual.precioMensual || "0"}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {planActual.periodo || "mes"}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2 mb-6">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Building2 className="w-4 h-4 text-primary" />
+                          <span>
+                            {planInfo.maxSucursales === null 
+                              ? "Sucursales ilimitadas" 
+                              : `Hasta ${planInfo.maxSucursales} ${planInfo.maxSucursales === 1 ? 'sucursal' : 'sucursales'}`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <FileText className="w-4 h-4 text-primary" />
+                          <span>Documentos electrónicos ilimitados</span>
+                        </div>
+                      </div>
+
+                      {empresa?.dias_restantes_plan !== undefined && empresa?.dias_restantes_plan !== null && (
+                        <div className="pt-4 border-t">
+                          <p className="text-sm text-muted-foreground">
+                            {empresa.dias_restantes_plan > 0 
+                              ? `${empresa.dias_restantes_plan} días restantes en tu período actual`
+                              : "Período de facturación próximo a renovarse"}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <Button 
+                        onClick={() => setOpenPlanesModal(true)} 
+                        className="w-full"
+                        size="lg"
+                      >
+                        Cambiar de Plan
+                      </Button>
+                      <p className="text-xs text-center text-muted-foreground">
+                        Actualiza o cambia tu plan en cualquier momento. El cambio es efectivo de inmediato.
+                      </p>
+                    </div>
+
+                    <Card className="border-muted-foreground/20">
+                      <CardHeader>
+                        <CardTitle className="text-base">Sucursales Activas</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">
+                            Estás usando {sucursales.length} de {planInfo.maxSucursales === null ? '∞' : planInfo.maxSucursales} sucursales
+                          </span>
+                          <div className="flex gap-1">
+                            {Array.from({ length: planInfo.maxSucursales || 3 }).map((_, i) => (
+                              <div
+                                key={i}
+                                className={`w-2 h-2 rounded-full ${
+                                  i < sucursales.length ? 'bg-primary' : 'bg-muted'
+                                }`}
+                              />
+                            ))}
+                            {planInfo.maxSucursales === null && (
+                              <span className="text-xs text-muted-foreground ml-1">∞</span>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </>
+                ) : (
+                  <div className="text-center py-12">
+                    <Building2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold mb-2">No hay plan asignado</h3>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Selecciona un plan para comenzar a usar todas las funcionalidades
+                    </p>
+                    <Button onClick={() => setOpenPlanesModal(true)}>
+                      Ver Planes Disponibles
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
+      <PlanesModal open={openPlanesModal} onOpenChange={setOpenPlanesModal} />
     </AppLayout>
   );
 }

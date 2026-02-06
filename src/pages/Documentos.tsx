@@ -14,6 +14,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -21,12 +31,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, FileText, Download, Eye, ChevronDown, ChevronUp, Folder } from "lucide-react";
+import { Plus, Search, FileText, Download, Eye, ChevronDown, ChevronUp, Folder, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Carpeta y archivo tipos simples (los campos reales vienen de la BD)
 type Carpeta = any;
 type Archivo = any;
+
+const CARPETAS_FIJAS = ["Boletas Electrónicas", "Facturas Electrónicas"];
+const getCarpetaNombre = (c: Carpeta) => (c?.nombre || c?.title || "").toString();
+const esCarpetaFija = (c: Carpeta) => CARPETAS_FIJAS.includes(getCarpetaNombre(c));
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("es-CL", {
@@ -58,6 +78,11 @@ export default function Documentos() {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [showFolders, setShowFolders] = useState(true);
+  const [editFolderOpen, setEditFolderOpen] = useState(false);
+  const [deleteFolderOpen, setDeleteFolderOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState<Carpeta | null>(null);
+  const [folderToDelete, setFolderToDelete] = useState<Carpeta | null>(null);
+  const [editFolderName, setEditFolderName] = useState("");
 
   // Pagination for archivos table
   const [page, setPage] = useState(1);
@@ -81,6 +106,20 @@ export default function Documentos() {
         }
       });
   }, [empresa?.id]);
+
+  const reloadCarpetas = async () => {
+    if (!empresa?.id) return;
+    const { data, error } = await supabase
+      .from("carpetas")
+      .select("*")
+      .eq("empresa", empresa.id)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Error recargando carpetas:", error);
+      return;
+    }
+    setCarpetas((data as Carpeta[]) || []);
+  };
 
   // Intenta cargar archivos para la carpeta seleccionada.
   // Se prueban varias columnas comunes como "carpeta" o "carpeta_id".
@@ -175,14 +214,77 @@ export default function Documentos() {
                     } else {
                       setNewFolderName('');
                       setIsCreateFolderOpen(false);
-                      // reload carpetas
-                      const { data } = await supabase.from('carpetas').select('*').eq('empresa', empresa?.id).order('created_at', { ascending: false });
-                      setCarpetas((data as Carpeta[]) || []);
+                      await reloadCarpetas();
                     }
                   }}>Crear Carpeta</Button>
                 </div>
               </DialogContent>
             </Dialog>
+
+            {/* Editar carpeta dialog */}
+            <Dialog open={editFolderOpen} onOpenChange={setEditFolderOpen}>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Editar Carpeta</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="grid gap-2">
+                    <Label>Nombre</Label>
+                    <Input value={editFolderName} onChange={(e) => setEditFolderName(e.target.value)} placeholder="Nombre de la carpeta" />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <Button variant="outline" onClick={() => setEditFolderOpen(false)}>Cancelar</Button>
+                  <Button onClick={async () => {
+                    if (!folderToEdit) return;
+                    const folderId = (folderToEdit.tablaID ?? folderToEdit.id) as any;
+                    if (!editFolderName) return;
+                    const { error } = await supabase
+                      .from('carpetas')
+                      .update({ nombre: editFolderName })
+                      .eq('id', folderId);
+                    if (error) {
+                      console.error('Error editando carpeta', error);
+                    } else {
+                      setEditFolderOpen(false);
+                      setFolderToEdit(null);
+                      await reloadCarpetas();
+                    }
+                  }}>Guardar</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Eliminar carpeta confirm */}
+            <AlertDialog open={deleteFolderOpen} onOpenChange={setDeleteFolderOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Eliminar carpeta</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción no se puede deshacer. Se eliminará la carpeta seleccionada.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={async () => {
+                    if (!folderToDelete) return;
+                    const folderId = (folderToDelete.tablaID ?? folderToDelete.id) as any;
+                    const { error } = await supabase.from('carpetas').delete().eq('id', folderId);
+                    if (error) {
+                      console.error('Error eliminando carpeta', error);
+                      return;
+                    }
+                    if (selectedCarpeta && (selectedCarpeta.tablaID ?? selectedCarpeta.id) === folderId) {
+                      setSelectedCarpeta(null);
+                      setArchivos([]);
+                    }
+                    setDeleteFolderOpen(false);
+                    setFolderToDelete(null);
+                    await reloadCarpetas();
+                  }}>Eliminar</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
           <div>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -343,6 +445,16 @@ export default function Documentos() {
                   if (!folderSearch) return true;
                   return (c.nombre || '').toString().toLowerCase().includes(folderSearch.toLowerCase());
                 })
+                .sort((a, b) => {
+                  const aPinned = esCarpetaFija(a);
+                  const bPinned = esCarpetaFija(b);
+                  if (aPinned && !bPinned) return -1;
+                  if (!aPinned && bPinned) return 1;
+                  if (aPinned && bPinned) {
+                    return CARPETAS_FIJAS.indexOf(getCarpetaNombre(a)) - CARPETAS_FIJAS.indexOf(getCarpetaNombre(b));
+                  }
+                  return 0;
+                })
                 .map((c) => {
                   const key = (c.tablaID ?? c.id ?? '').toString();
                   return (
@@ -365,7 +477,43 @@ export default function Documentos() {
                             <h3 className="font-semibold">{c.nombre || c.title || "Carpeta"}</h3>
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">{c.count || ''}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm text-muted-foreground">{c.count || ''}</div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setFolderToEdit(c);
+                                  setEditFolderName(c.nombre || c.title || "");
+                                  setEditFolderOpen(true);
+                                }}
+                              >
+                                <Pencil className="w-4 h-4 mr-2" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => {
+                                  setFolderToDelete(c);
+                                  setDeleteFolderOpen(true);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Eliminar
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </div>
                   );

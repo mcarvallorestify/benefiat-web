@@ -15,7 +15,7 @@ export function useClientes(empresaId) {
     setLoading(true);
     supabase
       .from("user")
-      .select('tablaID, nombre, apellido, email')
+      .select('tablaID, nombre, apellido, email, run, dv,rol')
       .eq("empresa", empresaId)
       .then(({ data, error }) => {
         console.log('[useClientes] data:', data, 'error:', error);

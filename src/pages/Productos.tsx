@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 import { useProductos } from "@/hooks/useProductos";
+import { useSucursales } from "@/hooks/useSucursales";
 import { supabase } from "@/lib/supabaseClient";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -160,6 +161,7 @@ export default function Productos() {
   const { user } = useUser();
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
   const { productos, loading: loadingProductos } = useProductos(empresa?.id);
+  const { sucursalActual } = useSucursales(empresa?.id);
   const [productosData, setProductosData] = useState<any[]>([]);
 
   // Sincronizar productos del hook con estado local
@@ -1020,6 +1022,7 @@ export default function Productos() {
                   } else {
                     // Crear nuevo producto
                     dataObj.empresa = empresa?.id || null;
+                    dataObj.sucursal = sucursalActual ?? null;
                     const { error } = await supabase.from("Producto").insert([dataObj]);
                     if (error) {
                       console.error("Error creando producto", error);

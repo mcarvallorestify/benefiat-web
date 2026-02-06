@@ -2,11 +2,19 @@ import { NavLink, useLocation } from "react-router-dom";
 import { Receipt, Building2 } from "lucide-react";
 import { navigationItems } from "./navigationItems";
 import { cn } from "@/lib/utils";
+import { useUser } from "@/hooks/useUser";
+import { useUserRole } from "@/hooks/useUserRole";
 
 // navigationItems importado
 
 export function Sidebar() {
   const location = useLocation();
+  const { user } = useUser();
+  const { role } = useUserRole(user?.id);
+  const roleNormalized = (role || "").toLowerCase();
+  const visibleItems = navigationItems.filter((item) =>
+    !item.roles || item.roles.includes(roleNormalized)
+  );
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-sidebar flex flex-col z-40 md:relative md:h-screen md:w-64 md:flex md:flex-col transition-all duration-200
@@ -26,7 +34,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {navigationItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = location.pathname === item.href;
           return (
             <NavLink

@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import ReporteMensual from "./pages/ReporteMensual";
 import CrearCuenta from "./pages/CrearCuenta";
 import { RequireAuth } from "@/components/RequireAuth";
+import { RequireRole } from "@/components/RequireRole";
 
 const queryClient = new QueryClient();
 
@@ -30,7 +31,9 @@ const App = () => (
             path="/"
             element={
               <RequireAuth>
-                <Dashboard />
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <Dashboard />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -38,7 +41,9 @@ const App = () => (
             path="/documentos"
             element={
               <RequireAuth>
-                <Documentos />
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <Documentos />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -46,7 +51,9 @@ const App = () => (
             path="/clientes"
             element={
               <RequireAuth>
-                <Clientes />
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <Clientes />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -54,7 +61,9 @@ const App = () => (
             path="/productos"
             element={
               <RequireAuth>
-                <Productos />
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <Productos />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -62,7 +71,9 @@ const App = () => (
             path="/configuracion"
             element={
               <RequireAuth>
-                <Configuracion />
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <Configuracion />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -78,7 +89,9 @@ const App = () => (
             path="/reporte-mensual"
             element={
               <RequireAuth>
-                <ReporteMensual />
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <ReporteMensual />
+                </RequireRole>
               </RequireAuth>
             }
           />

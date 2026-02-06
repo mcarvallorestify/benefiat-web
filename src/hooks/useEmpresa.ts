@@ -9,15 +9,31 @@ export function useEmpresa(creatorUuid) {
   useEffect(() => {
     if (!creatorUuid) return;
     setLoading(true);
+    
+    // Primero obtener el campo empresa del usuario
     supabase
-      .from("empresa")
-      .select("*")
-      .eq("creador", creatorUuid)
+      .from("user")
+      .select("empresa")
+      .eq("tablaID", creatorUuid)
       .single()
-      .then(({ data, error }) => {
-        setEmpresa(data);
-        setError(error);
-        setLoading(false);
+      .then(({ data: userData, error: userError }) => {
+        if (userError || !userData?.empresa) {
+          setError(userError);
+          setLoading(false);
+          return;
+        }
+        
+        // Luego buscar la empresa por el ID del usuario
+        supabase
+          .from("empresa")
+          .select("*")
+          .eq("id", userData.empresa)
+          .single()
+          .then(({ data, error }) => {
+            setEmpresa(data);
+            setError(error);
+            setLoading(false);
+          });
       });
   }, [creatorUuid]);
 

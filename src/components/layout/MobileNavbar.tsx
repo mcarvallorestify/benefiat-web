@@ -1,18 +1,41 @@
 import { useState } from "react";
-import { Receipt, Menu } from "lucide-react";
+import { Receipt, Menu, Building2 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { navigationItems } from "./navigationItems";
 import logoSinFondo from "@/images/logoSinFondo.png";
 import { supabase } from "@/lib/supabaseClient";
+import { useUser } from "@/hooks/useUser";
+import { useEmpresa } from "@/hooks/useEmpresa";
+import { useSucursales } from "@/hooks/useSucursales";
+import { PlanesModal } from "@/components/PlanesModal";
+import { useUserRole } from "@/hooks/useUserRole";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function MobileNavbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openPlanesModal, setOpenPlanesModal] = useState(false);
   const navigate = useNavigate();
+  const { user } = useUser();
+  const { role } = useUserRole(user?.id);
+  const { empresa } = useEmpresa(user?.id);
+  const { sucursales, sucursalActual, planInfo, cambiarSucursal } = useSucursales(empresa?.id);
+  const roleNormalized = (role || "").toLowerCase();
+  const visibleItems = navigationItems.filter((item) =>
+    !item.roles || item.roles.includes(roleNormalized)
+  );
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/login");
   };
+  
+  const mostrarSelectorSucursales = planInfo.maxSucursales !== 1 && sucursales.length > 1;
 
   return (
     <>
@@ -41,7 +64,38 @@ export function MobileNavbar() {
               <span className="font-semibold text-lg text-sidebar-foreground">Benefiat</span>
             </div>
             <nav className="flex-1 p-4 space-y-1">
-              {navigationItems.map((item) => (
+              {mostrarSelectorSucursales && (
+                <div className="px-4 py-3 mb-2">
+                  <label className="text-xs text-sidebar-foreground/60 mb-1 block">Sucursal</label>
+                  <Select value={String(sucursalActual)} onValueChange={(val) => cambiarSucursal(Number(val))}>
+                    <SelectTrigger className="w-full bg-sidebar-accent border-sidebar-border">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4" />
+                        <SelectValue placeholder="Seleccionar sucursal" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sucursales.map((suc) => (
+                        <SelectItem key={suc.id} value={String(suc.id)}>
+                          {suc.nombre || `Sucursal ${suc.id}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!planInfo.canCreateMore && (
+                    <button 
+                      className="text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground underline mt-2 block"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setOpenPlanesModal(true);
+                      }}
+                    >
+                      ¿Necesitas más sucursales? Actualiza tu plan
+                    </button>
+                  )}
+                </div>
+              )}
+              {visibleItems.map((item) => (
                 <NavLink
                   key={item.name}
                   to={item.href}
@@ -56,16 +110,19 @@ export function MobileNavbar() {
                   <span>{item.name}</span>
                 </NavLink>
               ))}
+            </nav>
+            <div className="p-4 border-t border-sidebar-border">
               <button
                 onClick={handleLogout}
-                className="mt-6 w-full px-4 py-2 rounded-lg bg-[#00679F] hover:bg-[#005377] text-white font-semibold shadow transition"
+                className="w-full px-4 py-2 rounded-lg bg-white text-[#00679F] border border-[#00679F] hover:bg-[#00679F] hover:text-white font-semibold shadow transition"
               >
                 Cerrar sesión
               </button>
-            </nav>
+            </div>
           </div>
         </div>
       )}
+      <PlanesModal open={openPlanesModal} onOpenChange={setOpenPlanesModal} />
     </>
   );
 }

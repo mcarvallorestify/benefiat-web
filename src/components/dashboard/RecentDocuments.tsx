@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { FileText, Receipt } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 
-type DocRow = {
+type OrdenRow = {
   id: string;
-  tipoDocumento: number;
-  usuario?: string; // tablaID
-  monto?: number;
+  monto: number;
+  cantidad: number;
+  estado: string;
+  observacion?: string;
+  mediodePago?: string;
   created_at?: string;
-  url?: string;
+  nombre?: string;
+  apellido?: string;
 };
 
 const formatCurrency = (amount: number) => {
@@ -26,8 +28,7 @@ const formatCurrency = (amount: number) => {
 export function RecentDocuments() {
   const { user } = useUser();
   const { empresa } = useEmpresa(user?.id);
-  const [docs, setDocs] = useState<DocRow[]>([]);
-  const [usersMap, setUsersMap] = useState<Record<string, { nombre?: string; apellido?: string }>>({});
+  const [docs, setDocs] = useState<OrdenRow[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -38,8 +39,8 @@ export function RecentDocuments() {
     (async () => {
       try {
         const { data, error } = await supabase
-          .from("documentosEmitidos")
-          .select("id, tipoDocumento, usuario, monto, created_at, url")
+          .from("Orden")
+          .select("id, monto, cantidad, estado, observacion, mediodePago, created_at, nombre, apellido")
           .eq("empresa", empresa.id)
           .order("created_at", { ascending: false })
           .limit(10);
@@ -49,24 +50,9 @@ export function RecentDocuments() {
           setDocs([]);
           return;
         }
-        const rows: DocRow[] = (data as any[]) || [];
+        const rows: OrdenRow[] = (data as any[]) || [];
         if (!mounted) return;
         setDocs(rows);
-
-        // obtener usuarios relacionados
-        const usuarioIds = Array.from(new Set(rows.map((r) => r.usuario).filter(Boolean)));
-        if (usuarioIds.length > 0) {
-          const { data: usersData } = await supabase
-            .from("user")
-            .select("tablaID, nombre, apellido")
-            .in("tablaID", usuarioIds as any[]);
-          const map: Record<string, { nombre?: string; apellido?: string }> = {};
-          (usersData || []).forEach((u: any) => {
-            map[String(u.tablaID)] = { nombre: u.nombre, apellido: u.apellido };
-          });
-          if (!mounted) return;
-          setUsersMap(map);
-        }
       } catch (e) {
         console.error("Error fetching recent documentos:", e);
       }
@@ -76,31 +62,24 @@ export function RecentDocuments() {
     };
   }, [empresa?.id]);
 
-  const openPdf = (url?: string) => {
-    if (!url) return;
-    window.open(url, "_blank");
-  };
-
   return (
     <div className="bg-card rounded-xl border border-border overflow-hidden animate-fade-in">
       <div className="p-6 border-b border-border">
         <h3 className="text-lg font-semibold text-foreground">Documentos Recientes</h3>
-        <p className="text-sm text-muted-foreground mt-1">Últimas boletas y facturas emitidas</p>
+        <p className="text-sm text-muted-foreground mt-1">Últimas ventas registradas</p>
       </div>
       <div className="divide-y divide-border">
         {docs.length === 0 ? (
           <div className="p-4 text-sm text-muted-foreground">No hay documentos</div>
         ) : (
           docs.map((doc) => {
-            const isBoleta = Number(doc.tipoDocumento) === 39;
-            const userInfo = doc.usuario ? usersMap[String(doc.usuario)] : null;
-            const clientName = userInfo ? `${userInfo.nombre || ''} ${userInfo.apellido || ''}`.trim() : (doc.usuario || 'Cliente');
+            const isBoleta = (doc.observacion || "").toLowerCase().includes("boleta");
+            const clientName = `${doc.nombre || ""} ${doc.apellido || ""}`.trim() || "Cliente";
             const dateStr =  doc.created_at || '';
             return (
               <div
                 key={doc.id}
-                className="p-4 hover:bg-muted/30 transition-colors flex items-center gap-4 cursor-pointer"
-                onClick={() => openPdf(doc.url)}
+                className="p-4 hover:bg-muted/30 transition-colors flex items-center gap-4"
               >
                 <div
                   className={cn(
@@ -112,11 +91,7 @@ export function RecentDocuments() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    {(() => {
-                      const t = Number(doc.tipoDocumento);
-                      const label = t === 33 ? 'Factura electrónica' : t === 39 ? 'Boleta electrónica' : 'Documento';
-                      return <span className="font-medium text-foreground">{label}</span>;
-                    })()}
+                    <span className="font-medium text-foreground">{doc.observacion || "Venta"}</span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{clientName}</p>
                 </div>

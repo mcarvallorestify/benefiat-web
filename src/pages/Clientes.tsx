@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
 import { useClientes } from "@/hooks/useClientes";
+import { useSucursales } from "@/hooks/useSucursales";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -100,6 +101,7 @@ export default function Clientes() {
   // Igual que en Productos: useEmpresa(user?.id)
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
   const { clientes, loading: loadingClientes } = useClientes(empresa?.id);
+  const { sucursalActual } = useSucursales(empresa?.id);
 
   // Estado local para soportar resultados del servidor (búsqueda por nombre+apellido)
   const [clientesLocal, setClientesLocal] = useState([]);
@@ -447,6 +449,7 @@ export default function Clientes() {
                       run: Number(String(formRun).replace(/\D/g, '')),
                       dv: String(formDv),
                       empresa: empresa?.id || null,
+                      sucursal: sucursalActual ?? null,
                       estado: 'activo',
                       pais: 'Chile',
                       region: formRegion || null,
