@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Mail, Phone, MapPin, FileText, Save, Plus, Trash2, Users, Shield, Search } from "lucide-react";
+import { Building2, Mail, Phone, MapPin, FileText, Save, Plus, Trash2, Users, Shield, Search, CreditCard } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
   Select,
@@ -119,6 +119,21 @@ export default function Configuracion() {
   const [nuevoRol, setNuevoRol] = useState("");
   const [searchUsuarios, setSearchUsuarios] = useState("");
 
+  // Tarjetas de usuario
+  const [tarjetas, setTarjetas] = useState<any[]>([]);
+  const [loadingTarjetas, setLoadingTarjetas] = useState(false);
+  const [openNuevaTarjeta, setOpenNuevaTarjeta] = useState(false);
+  const [guardandoTarjeta, setGuardandoTarjeta] = useState(false);
+  const [actualizandoPredeterminada, setActualizandoPredeterminada] = useState(false);
+  const [eliminandoTarjetaId, setEliminandoTarjetaId] = useState<number | null>(null);
+  const [formNumTarjeta, setFormNumTarjeta] = useState("");
+  const [formMesVencimiento, setFormMesVencimiento] = useState("");
+  const [formAnnioVencimiento, setFormAnnioVencimiento] = useState("");
+  const [formCvv, setFormCvv] = useState("");
+  const [formNombreTarjeta, setFormNombreTarjeta] = useState("");
+  const [formRutTarjeta, setFormRutTarjeta] = useState("");
+  const [formPredeterminada, setFormPredeterminada] = useState(false);
+
   useEffect(() => {
     if (!empresa) return;
     // map known fields from empresa object if present
@@ -223,6 +238,208 @@ export default function Configuracion() {
         setLoadingUsuarios(false);
       });
     return () => { mounted = false; };
+  }, [empresa?.id]);
+
+  const handleRutTarjetaChange = (value: string) => {
+    // Remover caracteres no válidos, mantener solo números y K
+    let input = value.toUpperCase().replace(/[^0-9K]/g, "");
+
+    // Obtener solo los dígitos (sin K)
+    let digits = input.replace(/K/g, "");
+
+    // Limitar a máximo 9 caracteres (8 dígitos + 1 DV)
+    if (digits.length > 9) {
+      digits = digits.slice(0, 9);
+    }
+
+    let formatted = digits;
+
+    // Si tiene K, es el DV
+    if (input.includes("K")) {
+      const numPart = digits.slice(0, 8);
+      formatted = `${numPart}-K`;
+    }
+    // Si tiene exactamente 9 dígitos, formatear como 8-1
+    else if (digits.length === 9) {
+      formatted = `${digits.slice(0, 8)}-${digits[8]}`;
+    }
+    // Si tiene 8 dígitos, mostrar como 7-1 (RUT < 10M)
+    else if (digits.length === 8) {
+      formatted = `${digits.slice(0, 7)}-${digits[7]}`;
+    }
+
+    setFormRutTarjeta(formatted);
+  };
+
+  const resetFormTarjeta = () => {
+    setFormNumTarjeta("");
+    setFormMesVencimiento("");
+    setFormAnnioVencimiento("");
+    setFormCvv("");
+    setFormNombreTarjeta("");
+    setFormRutTarjeta("");
+    setFormPredeterminada(false);
+  };
+
+  const cargarTarjetas = async (empresaId: number) => {
+    setLoadingTarjetas(true);
+    const { data, error } = await supabase
+      .from("tarjetaUsuario")
+      .select(
+        "id, created_at, numTarjeta, mesVencimiento, annioVencimiento, cvv, nombreTarjeta, rutTarjeta, primerosSeisdigitos, ultmosCuatrodigitos, usuario, predeterminado, empresa"
+      )
+      .eq("empresa", empresaId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error cargando tarjetas:", error);
+      toast({ title: "Error", description: "No se pudieron cargar las tarjetas", variant: "destructive" });
+    } else {
+      setTarjetas(data || []);
+    }
+    setLoadingTarjetas(false);
+  };
+
+  const establecerPredeterminada = async (tarjetaId: number) => {
+    if (!empresa?.id) return;
+    setActualizandoPredeterminada(true);
+    try {
+      const { error: resetError } = await supabase
+        .from("tarjetaUsuario")
+        .update({ predeterminado: false })
+        .eq("empresa", empresa.id);
+      if (resetError) throw resetError;
+
+      const { error } = await supabase
+        .from("tarjetaUsuario")
+        .update({ predeterminado: true })
+        .eq("id", tarjetaId);
+      if (error) throw error;
+
+      setTarjetas((prev) =>
+        prev.map((t) => ({ ...t, predeterminado: t.id === tarjetaId }))
+      );
+      toast({ title: "Tarjeta predeterminada", description: "Se actualizó la tarjeta de cobro." });
+    } catch (e: any) {
+      console.error("Error actualizando predeterminada:", e);
+      toast({ title: "Error", description: e?.message || "No se pudo actualizar la tarjeta", variant: "destructive" });
+    } finally {
+      setActualizandoPredeterminada(false);
+    }
+  };
+
+  const eliminarTarjeta = async (tarjetaId: number) => {
+    if (!empresa?.id) return;
+    if (tarjetas.length <= 1) {
+      toast({ title: "Acción no permitida", description: "Debe existir al menos una tarjeta para cobros.", variant: "destructive" });
+      return;
+    }
+
+    setEliminandoTarjetaId(tarjetaId);
+    try {
+      const tarjeta = tarjetas.find((t) => t.id === tarjetaId);
+      const { error } = await supabase
+        .from("tarjetaUsuario")
+        .delete()
+        .eq("id", tarjetaId);
+      if (error) throw error;
+
+      let nuevas = tarjetas.filter((t) => t.id !== tarjetaId);
+
+      if (tarjeta?.predeterminado && nuevas.length > 0) {
+        const nuevaPred = nuevas[0];
+        await supabase
+          .from("tarjetaUsuario")
+          .update({ predeterminado: true })
+          .eq("id", nuevaPred.id);
+        nuevas = nuevas.map((t) => ({ ...t, predeterminado: t.id === nuevaPred.id }));
+      }
+
+      setTarjetas(nuevas);
+      toast({ title: "Tarjeta eliminada", description: "La tarjeta fue eliminada correctamente." });
+    } catch (e: any) {
+      console.error("Error eliminando tarjeta:", e);
+      toast({ title: "Error", description: e?.message || "No se pudo eliminar la tarjeta", variant: "destructive" });
+    } finally {
+      setEliminandoTarjetaId(null);
+    }
+  };
+
+  const crearTarjeta = async () => {
+    if (!empresa?.id || !user?.id) return;
+    const numTarjetaLimpia = formNumTarjeta.replace(/[^0-9]/g, "");
+    const mes = formMesVencimiento.replace(/[^0-9]/g, "");
+    const annio = formAnnioVencimiento.replace(/[^0-9]/g, "");
+    const cvv = formCvv.replace(/[^0-9]/g, "");
+
+    if (!numTarjetaLimpia || numTarjetaLimpia.length < 13) {
+      toast({ title: "Datos incompletos", description: "Ingresa un número de tarjeta válido.", variant: "destructive" });
+      return;
+    }
+    if (!mes || Number(mes) < 1 || Number(mes) > 12) {
+      toast({ title: "Datos incompletos", description: "Mes de vencimiento inválido.", variant: "destructive" });
+      return;
+    }
+    if (!annio || annio.length < 4) {
+      toast({ title: "Datos incompletos", description: "Año de vencimiento inválido.", variant: "destructive" });
+      return;
+    }
+    if (!cvv || cvv.length < 3) {
+      toast({ title: "Datos incompletos", description: "CVV inválido.", variant: "destructive" });
+      return;
+    }
+
+    setGuardandoTarjeta(true);
+    try {
+      const debeSerPredeterminada = tarjetas.length === 0 ? true : formPredeterminada;
+      if (debeSerPredeterminada) {
+        await supabase
+          .from("tarjetaUsuario")
+          .update({ predeterminado: false })
+          .eq("empresa", empresa.id);
+      }
+
+      const payload: any = {
+        numTarjeta: Number(numTarjetaLimpia),
+        mesVencimiento: Number(mes),
+        annioVencimiento: Number(annio),
+        cvv: Number(cvv),
+        nombreTarjeta: formNombreTarjeta || null,
+        rutTarjeta: formRutTarjeta || null,
+        primerosSeisdigitos: Number(numTarjetaLimpia.slice(0, 6)),
+        ultmosCuatrodigitos: Number(numTarjetaLimpia.slice(-4)),
+        usuario: user.id,
+        predeterminado: debeSerPredeterminada,
+        empresa: empresa.id,
+      };
+
+      const { data, error } = await supabase
+        .from("tarjetaUsuario")
+        .insert([payload])
+        .select()
+        .maybeSingle();
+      if (error) throw error;
+
+      if (data) {
+        setTarjetas((prev) => [data, ...prev.map((t) => ({ ...t, predeterminado: debeSerPredeterminada ? false : t.predeterminado }))]);
+      }
+      toast({ title: "Tarjeta agregada", description: "La tarjeta se agregó correctamente." });
+      resetFormTarjeta();
+      setOpenNuevaTarjeta(false);
+    } catch (e: any) {
+      console.error("Error creando tarjeta:", e);
+      toast({ title: "Error", description: e?.message || "No se pudo agregar la tarjeta", variant: "destructive" });
+    } finally {
+      setGuardandoTarjeta(false);
+    }
+  };
+
+  // Cargar tarjetas del usuario/empresa
+  useEffect(() => {
+    if (!empresa?.id) return;
+    (async () => {
+      await cargarTarjetas(empresa.id);
+    })();
   }, [empresa?.id]);
 
   const actualizarRolUsuario = async (tablaID: string, nuevoRol: string) => {
@@ -716,6 +933,7 @@ export default function Configuracion() {
             <TabsTrigger value="documentos">Documentos</TabsTrigger>
             <TabsTrigger value="sucursales">Sucursales</TabsTrigger>
             <TabsTrigger value="roles">Roles y Permisos</TabsTrigger>
+            <TabsTrigger value="tarjetas">Tarjetas</TabsTrigger>
             <TabsTrigger value="plan">Plan</TabsTrigger>
           </TabsList>
 
@@ -1371,6 +1589,197 @@ export default function Configuracion() {
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="tarjetas" className="space-y-6 animate-fade-in">
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-primary" />
+                    Tarjetas de Cobro
+                  </CardTitle>
+                  <CardDescription>
+                    Tarjetas asociadas a tu empresa. La tarjeta marcada como predeterminada será usada para cobros.
+                  </CardDescription>
+                </div>
+                <Button onClick={() => { resetFormTarjeta(); setOpenNuevaTarjeta(true); }} className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  Agregar tarjeta
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {loadingTarjetas ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Cargando tarjetas...
+                  </div>
+                ) : tarjetas.length === 0 ? (
+                  <div className="text-center py-8">
+                    <CreditCard className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold mb-2">No hay tarjetas registradas</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Debes registrar al menos una tarjeta para los cobros.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {tarjetas.map((tarjeta) => {
+                      const ultimos = tarjeta.ultmosCuatrodigitos ?? tarjeta.numTarjeta?.toString().slice(-4) ?? "";
+                      const primeros = tarjeta.primerosSeisdigitos ?? tarjeta.numTarjeta?.toString().slice(0, 6) ?? "";
+                      return (
+                        <div
+                          key={tarjeta.id}
+                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              
+                              {tarjeta.predeterminado ? (
+                                <Badge variant="default">Predeterminada</Badge>
+                              ) : (
+                                <Badge variant="outline">Secundaria</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {primeros ? `${primeros}••••••` : "••••••"} •••• {ultimos}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Vence {tarjeta.mesVencimiento?.toString().padStart(2, "0") || "--"}/
+                              {tarjeta.annioVencimiento || "----"}
+                            </p>
+                            {tarjeta.nombreTarjeta && (
+                              <p className="text-xs text-muted-foreground">
+                                {tarjeta.nombreTarjeta}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {!tarjeta.predeterminado && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => establecerPredeterminada(tarjeta.id)}
+                                disabled={actualizandoPredeterminada}
+                              >
+                                Hacer predeterminada
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => eliminarTarjeta(tarjeta.id)}
+                              disabled={eliminandoTarjetaId === tarjeta.id || actualizandoPredeterminada}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!loadingTarjetas && tarjetas.length > 0 && !tarjetas.some((t) => t.predeterminado) && (
+                  <div className="mt-4 p-4 border border-destructive/20 bg-destructive/5 rounded-lg">
+                    <p className="text-sm font-medium text-destructive">
+                      No hay tarjeta predeterminada para cobros.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Debe existir una tarjeta marcada como predeterminada para poder realizar cobros.
+                    </p>
+                  </div>
+                )}
+
+                <Dialog open={openNuevaTarjeta} onOpenChange={(open) => { setOpenNuevaTarjeta(open); if (!open) resetFormTarjeta(); }}>
+                  <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Agregar tarjeta</DialogTitle>
+                      <DialogDescription>
+                        Ingresa los datos de la nueva tarjeta. No puedes quedar sin tarjeta para cobros.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="grid gap-4">
+                      <div className="grid gap-2">
+                        <Label>Número de tarjeta</Label>
+                        <Input
+                          value={formNumTarjeta}
+                          onChange={(e) => setFormNumTarjeta(e.target.value.replace(/[^0-9]/g, ""))}
+                          placeholder="1234 5678 9012 3456"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label>Mes vencimiento</Label>
+                          <Input
+                            value={formMesVencimiento}
+                            onChange={(e) => setFormMesVencimiento(e.target.value.replace(/[^0-9]/g, ""))}
+                            placeholder="MM"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Año vencimiento</Label>
+                          <Input
+                            value={formAnnioVencimiento}
+                            onChange={(e) => setFormAnnioVencimiento(e.target.value.replace(/[^0-9]/g, ""))}
+                            placeholder="YYYY"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label>CVV</Label>
+                          <Input
+                            value={formCvv}
+                            onChange={(e) => setFormCvv(e.target.value.replace(/[^0-9]/g, ""))}
+                            placeholder="123"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Nombre en tarjeta</Label>
+                          <Input
+                            value={formNombreTarjeta}
+                            onChange={(e) => setFormNombreTarjeta(e.target.value)}
+                            placeholder="Nombre"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label>RUT tarjeta</Label>
+                          <Input
+                            value={formRutTarjeta}
+                            onChange={(e) => handleRutTarjetaChange(e.target.value)}
+                            placeholder="12.345.678-9"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          id="predeterminada"
+                          type="checkbox"
+                          checked={formPredeterminada || tarjetas.length === 0}
+                          onChange={(e) => setFormPredeterminada(e.target.checked)}
+                          disabled={tarjetas.length === 0}
+                        />
+                        <label htmlFor="predeterminada" className="text-sm">
+                          Usar como predeterminada para cobros
+                        </label>
+                      </div>
+                    </div>
+
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setOpenNuevaTarjeta(false)} disabled={guardandoTarjeta}>
+                        Cancelar
+                      </Button>
+                      <Button onClick={crearTarjeta} disabled={guardandoTarjeta}>
+                        {guardandoTarjeta ? "Guardando..." : "Guardar tarjeta"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardContent>
             </Card>
           </TabsContent>
