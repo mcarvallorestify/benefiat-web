@@ -92,31 +92,20 @@ export default function Dashboard() {
           setClientesCount(resClientes?.count ?? 0);
         }
 
-        // Ventas del mes: sumar columna 'monto' en documentosEmitidos filtrado por empresa y mes actual
+        // Ventas del mes: sumar columna 'monto' desde la tabla Orden
         const resMontos = await supabase
-          .from('documentosEmitidos')
+          .from('Orden')
           .select('monto')
           .eq('empresa', empresa.id)
-          .gte('fechaEmision', start)
-          .lt('fechaEmision', end);
-        let rows = resMontos.data || [];
+          .eq('estado', 'Completado')
+          .gte('created_at', start)
+          .lt('created_at', end);
+        
         if (resMontos.error) {
-          const resAlt = await supabase
-            .from('documentosEmitidos')
-            .select('monto')
-            .eq('empresa', empresa.id)
-            .gte('created_at', start)
-            .lt('created_at', end);
-          if (resAlt.error) {
-            console.error('Error cargando montos (fechaEmision y created_at):', resMontos.error, resAlt.error);
-            setVentasMes(0);
-          } else {
-            rows = resAlt.data || [];
-            const sum = (rows || []).reduce((s, r) => s + Number(r?.monto || 0), 0);
-            setVentasMes(sum);
-          }
+          console.error('Error cargando ventas del mes:', resMontos.error);
+          setVentasMes(0);
         } else {
-          const sum = (rows || []).reduce((s, r) => s + Number(r?.monto || 0), 0);
+          const sum = (resMontos.data || []).reduce((s, r) => s + Number(r?.monto || 0), 0);
           setVentasMes(sum);
         }
       } catch (e) {

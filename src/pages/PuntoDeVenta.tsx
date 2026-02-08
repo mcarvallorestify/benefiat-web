@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Command, CommandInput, CommandList, CommandItem, CommandEmpty } from "@/components/ui/command";
+import { useToast } from "@/hooks/use-toast";
 import { Search } from "lucide-react";
 import { ChevronDown } from "lucide-react";
 
@@ -30,12 +31,22 @@ export default function PuntoDeVenta() {
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
   const { clientes: clientesBase, loading: loadingClientesBase } = useClientes(empresa?.id);
   const { sucursalActual } = useSucursales(empresa?.id);
+  const { toast } = useToast();
 
   // Validación usando tablas respectivas (empresa, sii, certificado_digital)
   const [loadingValidacion, setLoadingValidacion] = useState(false);
   const [empresaDatosOk, setEmpresaDatosOk] = useState(false);
   const [facturacionOk, setFacturacionOk] = useState(false);
   const [certificadoOk, setCertificadoOk] = useState(false);
+  const [tieneCafBoletas, setTieneCafBoletas] = useState(false);
+  const [tieneCafFacturas, setTieneCafFacturas] = useState(false);
+
+  // Caja
+  const [cajaAbierta, setCajaAbierta] = useState(false);
+  const [cajaActual, setCajaActual] = useState<any>(null);
+  const [openAbrirCaja, setOpenAbrirCaja] = useState(false);
+  const [montoInicialCaja, setMontoInicialCaja] = useState("");
+  const [procesandoCaja, setProcesandoCaja] = useState(false);
 
   React.useEffect(() => {
     let mounted = true;
@@ -60,6 +71,38 @@ export default function PuntoDeVenta() {
           .select("id")
           .eq("empresa", empresa.id)
           .maybeSingle();
+
+        // Verificar si existen CAF activos en la tabla caf
+        let cafBoletasExiste = false;
+        let cafFacturasExiste = false;
+
+        // Buscar CAF de boletas con folios disponibles
+        const { data: cafBoletasData } = await supabase
+          .from("caf")
+          .select("folio_disponible, hasta")
+          .eq("empresa_id", empresa.id)
+          .eq("tipo_documento", "Boleta")
+          .order("folio_disponible", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cafBoletasData && Number(cafBoletasData.folio_disponible) <= Number(cafBoletasData.hasta)) {
+          cafBoletasExiste = true;
+        }
+
+        // Buscar CAF de facturas con folios disponibles
+        const { data: cafFacturasData } = await supabase
+          .from("caf")
+          .select("folio_disponible, hasta")
+          .eq("empresa_id", empresa.id)
+          .eq("tipo_documento", "Factura")
+          .order("folio_disponible", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cafFacturasData && Number(cafFacturasData.folio_disponible) <= Number(cafFacturasData.hasta)) {
+          cafFacturasExiste = true;
+        }
 
         if (!mounted) return;
 
@@ -87,11 +130,36 @@ export default function PuntoDeVenta() {
         setEmpresaDatosOk(datosEmpresaCompletos);
         setFacturacionOk(facturacionCompleta);
         setCertificadoOk(certificadoCompleto);
+        setTieneCafBoletas(cafBoletasExiste);
+        setTieneCafFacturas(cafFacturasExiste);
+
+        // Verificar si hay caja abierta hoy
+        const hoy = new Date().toISOString().split("T")[0];
+        const { data: cajaData } = await supabase
+          .from("caja")
+          .select("*")
+          .eq("empresa", empresa.id)
+          .gte("created_at", `${hoy}T00:00:00`)
+          .lte("created_at", `${hoy}T23:59:59`)
+          .is("monto_cierre", null)
+          .maybeSingle();
+
+        setCajaActual(cajaData);
+        setCajaAbierta(!!cajaData);
+        
+        // Si no hay caja abierta, mostrar modal automáticamente
+        if (!cajaData && mounted) {
+          setOpenAbrirCaja(true);
+        }
       } catch (e) {
         if (!mounted) return;
         setEmpresaDatosOk(false);
         setFacturacionOk(false);
         setCertificadoOk(false);
+        setTieneCafBoletas(false);
+        setTieneCafFacturas(false);
+        setCajaAbierta(false);
+        setCajaActual(null);
       } finally {
         if (mounted) setLoadingValidacion(false);
       }
@@ -227,7 +295,7 @@ export default function PuntoDeVenta() {
 
 
   const [medioPago, setMedioPago] = useState('');
-  const [tipoDocumento, setTipoDocumento] = useState('Boleta');
+  const [tipoDocumento, setTipoDocumento] = useState('Vale de Venta');
   const [mensaje, setMensaje] = useState('');
   const [openPdfModal, setOpenPdfModal] = useState(false);
   const [pdfUrl, setPdfUrl] = useState('');
@@ -512,10 +580,47 @@ export default function PuntoDeVenta() {
         }
       }
 
+      // Registrar venta en caja (solo si hay caja abierta del día)
+      await registrarVentaEnCaja(montoTotal);
+
       // Limpiar observaciones después de crear la orden
       setObservaciones('');
     } catch (e) {
       console.error("Error al crear orden:", e);
+    }
+  };
+
+  const registrarVentaEnCaja = async (monto: number) => {
+    if (!empresa?.id || !cajaActual) return;
+    
+    try {
+      // Verificar que la caja siga abierta (no cerrada mientras se procesaba la venta)
+      const { data: cajaVerificada, error: cajaError } = await supabase
+        .from("caja")
+        .select("id, monto_cierre")
+        .eq("id", cajaActual.id)
+        .single();
+
+      if (cajaError || !cajaVerificada || cajaVerificada.monto_cierre !== null) {
+        console.warn("La caja fue cerrada durante la venta");
+        return;
+      }
+
+      // Registrar ingreso por venta
+      const { error } = await supabase.from("movimiento_caja").insert([
+        {
+          caja: cajaActual.id,
+          ingreso: monto,
+          retiro: null,
+          motivo: `Venta - ${tipoDocumento}`,
+        },
+      ]);
+
+      if (error) {
+        console.error("Error al insertar movimiento:", error);
+      }
+    } catch (e) {
+      console.error("Error registrando venta en caja:", e);
     }
   };
 
@@ -557,9 +662,99 @@ export default function PuntoDeVenta() {
     }
   }, [openPdfModal, pdfUrl]);
 
+  // Abrir caja
+  const abrirCaja = async () => {
+    if (!empresa?.id) return;
+    const monto = parseFloat(montoInicialCaja);
+    if (isNaN(monto) || monto < 0) {
+      toast({ title: "Error", description: "Ingresa un monto inicial válido", variant: "destructive" });
+      return;
+    }
+
+    setProcesandoCaja(true);
+    try {
+      const { data, error } = await supabase
+        .from("caja")
+        .insert([{
+          empresa: empresa.id,
+          sucursal: sucursalActual || null,
+          monto_inicial: monto,
+          monto_cierre: null,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      setCajaActual(data);
+      setCajaAbierta(true);
+      toast({ title: "Caja abierta", description: "La caja se abrió correctamente" });
+      setOpenAbrirCaja(false);
+      setMontoInicialCaja("");
+    } catch (e: any) {
+      console.error("Error abriendo caja:", e);
+      toast({ title: "Error", description: e?.message || "No se pudo abrir la caja", variant: "destructive" });
+    } finally {
+      setProcesandoCaja(false);
+    }
+  };
+
+  // Obtener siguiente folio disponible y actualizar la tabla CAF
+  const obtenerYActualizarFolio = async (tipoDoc: "Boleta" | "Factura"): Promise<number | null> => {
+    if (!empresa?.id) return null;
+
+    try {
+      // Obtener el CAF activo con folios disponibles
+      const { data: cafData, error: cafError } = await supabase
+        .from("caf")
+        .select("id, folio_disponible, hasta")
+        .eq("empresa_id", empresa.id)
+        .eq("tipo_documento", tipoDoc)
+        .order("folio_disponible", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (cafError || !cafData) {
+        console.error("Error obteniendo CAF:", cafError);
+        return null;
+      }
+
+      const folioActual = Number(cafData.folio_disponible);
+      const folioHasta = Number(cafData.hasta);
+
+      // Verificar que no se haya agotado
+      if (folioActual > folioHasta) {
+        setMensaje(`Los folios de ${tipoDoc} se han agotado. Carga un nuevo CAF.`);
+        return null;
+      }
+
+      // Actualizar el folio_disponible al siguiente
+      const { error: updateError } = await supabase
+        .from("caf")
+        .update({ folio_disponible: folioActual + 1 })
+        .eq("id", cafData.id);
+
+      if (updateError) {
+        console.error("Error actualizando folio:", updateError);
+        return null;
+      }
+
+      return folioActual;
+    } catch (e) {
+      console.error("Error en obtenerYActualizarFolio:", e);
+      return null;
+    }
+  };
+
   const handlePagar = async () => {
-    if (!cliente || !medioPago || carrito.length === 0) {
-      setMensaje('Completa todos los campos y agrega productos.');
+    // Verificar que la caja esté abierta
+    if (!cajaAbierta) {
+      setOpenAbrirCaja(true);
+      setMensaje("Debes abrir la caja antes de realizar ventas");
+      return;
+    }
+
+    if (!medioPago || carrito.length === 0) {
+      setMensaje('Completa el medio de pago y agrega productos.');
       return;
     }
     if (!empresa) {
@@ -567,8 +762,11 @@ export default function PuntoDeVenta() {
       return;
     }
 
+    // Si no hay cliente seleccionado, usar el usuario logueado
+    const clienteId = cliente || user?.id;
+    
     // Obtener datos del cliente (run y dv)
-    const clienteData = clientesBase?.find(c => c.tablaID === cliente);
+    const clienteData = clientesBase?.find(c => c.tablaID === clienteId);
     if (!clienteData || !clienteData.run || !clienteData.dv) {
       setMensaje('El cliente no tiene RUN completo.');
       return;
@@ -659,12 +857,19 @@ export default function PuntoDeVenta() {
       const numeroResolucion = empresa.numeroResolucion || "80";
       const tipoDTE = tipoDocumento === "Boleta" ? 39 : 33;
 
+      // Obtener el siguiente folio desde la tabla CAF
+      const folio = await obtenerYActualizarFolio(tipoDocumento as "Boleta" | "Factura");
+      if (!folio) {
+        setMensaje(`No se pudo obtener un folio para ${tipoDocumento}. Verifica que tengas CAF cargado y con folios disponibles.`);
+        return;
+      }
+
       const jsonData = {
         Documento: {
           Encabezado: {
             IdentificacionDTE: {
               TipoDTE: tipoDTE,
-              Folio: empresa.siguiente_folio || 2,
+              Folio: folio,
               FechaEmision: fechaEmision,
               IndicadorServicio: 3
             },
@@ -949,9 +1154,31 @@ export default function PuntoDeVenta() {
                   <SelectValue placeholder="Selecciona tipo de documento" />
                 </SelectTrigger>
                 <SelectContent>
-                  {tiposDocumento.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
+                  {tiposDocumento.map((t) => {
+                    // Vale de Venta siempre disponible
+                    if (t === 'Vale de Venta') {
+                      return <SelectItem key={t} value={t}>{t}</SelectItem>;
+                    }
+                    // Boleta requiere certificado digital Y CAF de boletas
+                    if (t === 'Boleta') {
+                      const habilitado = certificadoOk && tieneCafBoletas;
+                      return (
+                        <SelectItem key={t} value={t} disabled={!habilitado}>
+                          {t} {!habilitado && '(Requiere certificado y CAF)'}
+                        </SelectItem>
+                      );
+                    }
+                    // Factura requiere certificado digital Y CAF de facturas
+                    if (t === 'Factura') {
+                      const habilitado = certificadoOk && tieneCafFacturas;
+                      return (
+                        <SelectItem key={t} value={t} disabled={!habilitado}>
+                          {t} {!habilitado && '(Requiere certificado y CAF)'}
+                        </SelectItem>
+                      );
+                    }
+                    return <SelectItem key={t} value={t}>{t}</SelectItem>;
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -1018,6 +1245,39 @@ export default function PuntoDeVenta() {
               onClick={handlePrintPdf}
             >
               Imprimir
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Abrir Caja */}
+      <Dialog open={openAbrirCaja} onOpenChange={setOpenAbrirCaja}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Abrir Caja</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Debes abrir la caja antes de realizar ventas. Ingresa el monto inicial con el que cuentas.
+            </p>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Monto Inicial</label>
+              <Input
+                type="number"
+                placeholder="0"
+                value={montoInicialCaja}
+                onChange={(e) => setMontoInicialCaja(e.target.value)}
+                min="0"
+                step="1"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpenAbrirCaja(false)} disabled={procesandoCaja}>
+              Cancelar
+            </Button>
+            <Button onClick={abrirCaja} disabled={procesandoCaja}>
+              {procesandoCaja ? "Abriendo..." : "Abrir Caja"}
             </Button>
           </div>
         </DialogContent>

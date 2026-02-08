@@ -14,6 +14,7 @@ import PuntoDeVenta from "./pages/PuntoDeVenta";
 import Login from "./pages/Login";
 import ReporteMensual from "./pages/ReporteMensual";
 import CrearCuenta from "./pages/CrearCuenta";
+import Caja from "./pages/Caja";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireRole } from "@/components/RequireRole";
 
@@ -91,6 +92,16 @@ const App = () => (
               <RequireAuth>
                 <RequireRole allowedRoles={["Administrador"]}>
                   <ReporteMensual />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/caja"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={["Administrador"]}>
+                  <Caja />
                 </RequireRole>
               </RequireAuth>
             }

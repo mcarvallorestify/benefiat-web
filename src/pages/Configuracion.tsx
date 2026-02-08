@@ -92,10 +92,14 @@ export default function Configuracion() {
   const [selectedCertFile, setSelectedCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState("");
   const [uploadingCert, setUploadingCert] = useState(false);
-  // CAF upload
-  const [selectedCafFile, setSelectedCafFile] = useState<File | null>(null);
-  const [uploadingCaf, setUploadingCaf] = useState(false);
-  const [siiFolioSiguiente, setSiiFolioSiguiente] = useState<number | null>(null);
+  // CAF upload Boletas
+  const [selectedCafBoletas, setSelectedCafBoletas] = useState<File | null>(null);
+  const [uploadingCafBoletas, setUploadingCafBoletas] = useState(false);
+  const [siiFolioSiguienteBoletas, setSiiFolioSiguienteBoletas] = useState<number | null>(null);
+  // CAF upload Facturas
+  const [selectedCafFacturas, setSelectedCafFacturas] = useState<File | null>(null);
+  const [uploadingCafFacturas, setUploadingCafFacturas] = useState(false);
+  const [siiFolioSiguienteFacturas, setSiiFolioSiguienteFacturas] = useState<number | null>(null);
   // Logo upload
   const [selectedLogoFile, setSelectedLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -867,7 +871,7 @@ export default function Configuracion() {
   };
 
   const uploadCafBoletas = async () => {
-    if (!selectedCafFile) {
+    if (!selectedCafBoletas) {
       toast({ title: "Archivo requerido", description: "Selecciona un archivo .xml antes de subir." });
       return;
     }
@@ -876,10 +880,25 @@ export default function Configuracion() {
       return;
     }
 
-    setUploadingCaf(true);
+    setUploadingCafBoletas(true);
     try {
+      // Leer el contenido del XML para extraer desde/hasta
+      const xmlText = await selectedCafBoletas.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+      
+      // Extraer desde y hasta del XML: <RNG><D>1</D><H>5000</H></RNG>
+      const desde = xmlDoc.querySelector("D")?.textContent || null;
+      const hasta = xmlDoc.querySelector("H")?.textContent || null;
+
+      if (!desde || !hasta) {
+        toast({ title: "Error", description: "No se pudieron extraer los folios desde/hasta del XML." });
+        setUploadingCafBoletas(false);
+        return;
+      }
+
       const form = new FormData();
-      form.append("archivo", selectedCafFile, selectedCafFile.name || "CAF_boletas.xml");
+      form.append("archivo", selectedCafBoletas, selectedCafBoletas.name || "CAF_boletas.xml");
       const rutFormatted = (rutEmpresa || empresa?.rutEmpresa || empresa?.rut || "").toString();
       form.append("rut", rutFormatted);
 
@@ -888,7 +907,7 @@ export default function Configuracion() {
       const apiKey = (empresa?.api_key ?? empresa?.apiKey ?? "") as string;
       if (!apiKey) {
         toast({ title: "API key faltante", description: "La empresa no tiene `api_key` configurada." });
-        setUploadingCaf(false);
+        setUploadingCafBoletas(false);
         return;
       }
 
@@ -908,12 +927,108 @@ export default function Configuracion() {
         return;
       }
 
-      toast({ title: "CAF subido", description: "El CAF de boletas fue enviado correctamente." });
+      // Guardar en tabla caf
+      const { error: cafError } = await supabase.from("caf").insert([{
+        tipo_documento: "Boleta",
+        empresa: empresa.id.toString(),
+        empresa_id: empresa.id,
+        desde: desde,
+        hasta: hasta,
+        folio_disponible: Number(desde),
+      }]);
+
+      if (cafError) {
+        console.error("Error guardando CAF en BD:", cafError);
+        toast({ title: "Advertencia", description: "CAF subido pero no se pudo guardar en la base de datos." });
+      } else {
+        toast({ title: "CAF subido", description: `CAF de boletas guardado correctamente (Folios ${desde} - ${hasta}).` });
+      }
     } catch (e) {
       console.error(e);
       toast({ title: "Error", description: "Error inesperado al subir el CAF." });
     } finally {
-      setUploadingCaf(false);
+      setUploadingCafBoletas(false);
+    }
+  };
+
+  const uploadCafFacturas = async () => {
+    if (!selectedCafFacturas) {
+      toast({ title: "Archivo requerido", description: "Selecciona un archivo .xml antes de subir." });
+      return;
+    }
+    if (!empresa?.id) {
+      toast({ title: "Empresa no encontrada", description: "Guarda primero los datos de la empresa." });
+      return;
+    }
+
+    setUploadingCafFacturas(true);
+    try {
+      // Leer el contenido del XML para extraer desde/hasta
+      const xmlText = await selectedCafFacturas.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+      
+      // Extraer desde y hasta del XML: <RNG><D>1</D><H>5000</H></RNG>
+      const desde = xmlDoc.querySelector("D")?.textContent || null;
+      const hasta = xmlDoc.querySelector("H")?.textContent || null;
+
+      if (!desde || !hasta) {
+        toast({ title: "Error", description: "No se pudieron extraer los folios desde/hasta del XML." });
+        setUploadingCafFacturas(false);
+        return;
+      }
+
+      const form = new FormData();
+      form.append("archivo", selectedCafFacturas, selectedCafFacturas.name || "CAF_facturas.xml");
+      const rutFormatted = (rutEmpresa || empresa?.rutEmpresa || empresa?.rut || "").toString();
+      form.append("rut", rutFormatted);
+
+      const sessionResp = await supabase.auth.getSession();
+      const jwt = sessionResp?.data?.session?.access_token ?? "";
+      const apiKey = (empresa?.api_key ?? empresa?.apiKey ?? "") as string;
+      if (!apiKey) {
+        toast({ title: "API key faltante", description: "La empresa no tiene `api_key` configurada." });
+        setUploadingCafFacturas(false);
+        return;
+      }
+
+      const res = await fetch("https://pdv.restify.cl/dte/subir_caf_facturas.php", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          "X-API-KEY": apiKey,
+        },
+        body: form,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.warn("Error subiendo CAF:", res.status, text);
+        toast({ title: "Error", description: "No se pudo subir el CAF de facturas." });
+        return;
+      }
+
+      // Guardar en tabla caf
+      const { error: cafError } = await supabase.from("caf").insert([{
+        tipo_documento: "Factura",
+        empresa: empresa.id.toString(),
+        empresa_id: empresa.id,
+        desde: desde,
+        hasta: hasta,
+        folio_disponible: Number(desde),
+      }]);
+
+      if (cafError) {
+        console.error("Error guardando CAF en BD:", cafError);
+        toast({ title: "Advertencia", description: "CAF subido pero no se pudo guardar en la base de datos." });
+      } else {
+        toast({ title: "CAF subido", description: `CAF de facturas guardado correctamente (Folios ${desde} - ${hasta}).` });
+      }
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Error inesperado al subir el CAF." });
+    } finally {
+      setUploadingCafFacturas(false);
     }
   };
 
@@ -927,15 +1042,17 @@ export default function Configuracion() {
         </div>
 
         <Tabs defaultValue="empresa" className="space-y-6">
-          <TabsList className="bg-muted/50">
-            <TabsTrigger value="empresa">Datos Empresa</TabsTrigger>
-            <TabsTrigger value="facturacion">Facturación</TabsTrigger>
-            <TabsTrigger value="documentos">Documentos</TabsTrigger>
-            <TabsTrigger value="sucursales">Sucursales</TabsTrigger>
-            <TabsTrigger value="roles">Roles y Permisos</TabsTrigger>
-            <TabsTrigger value="tarjetas">Tarjetas</TabsTrigger>
-            <TabsTrigger value="plan">Plan</TabsTrigger>
-          </TabsList>
+          <div className="w-full overflow-x-auto">
+            <TabsList className="bg-muted/50 w-full justify-start inline-flex min-w-max">
+              <TabsTrigger value="empresa" className="whitespace-nowrap">Datos Empresa</TabsTrigger>
+              <TabsTrigger value="facturacion" className="whitespace-nowrap">Facturación</TabsTrigger>
+              <TabsTrigger value="documentos" className="whitespace-nowrap">Documentos</TabsTrigger>
+              <TabsTrigger value="sucursales" className="whitespace-nowrap">Sucursales</TabsTrigger>
+              <TabsTrigger value="roles" className="whitespace-nowrap">Roles y Permisos</TabsTrigger>
+              <TabsTrigger value="tarjetas" className="whitespace-nowrap">Tarjetas</TabsTrigger>
+              <TabsTrigger value="plan" className="whitespace-nowrap">Plan</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="empresa" className="space-y-6 animate-fade-in">
             <Card>
@@ -1149,40 +1266,81 @@ export default function Configuracion() {
 
                 <Card className="mt-4">
                   <CardHeader>
-                    <CardTitle>CAF / Folios</CardTitle>
-                    <CardDescription>Carga tu archivo CAF (.xml) para la emisión de boletas</CardDescription>
+                    <CardTitle>CAF / Folios - Boletas</CardTitle>
+                    <CardDescription>Carga tu archivo CAF (.xml) para la emisión de boletas electrónicas</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      <Label>Archivo CAF (.xml)</Label>
+                      <Label>Archivo CAF Boletas (.xml)</Label>
                       <input
                         type="file"
                         accept=".xml"
-                        onChange={(e) => setSelectedCafFile(e.target.files?.[0] ?? null)}
+                        onChange={(e) => setSelectedCafBoletas(e.target.files?.[0] ?? null)}
                         className="w-full"
                       />
-                      {selectedCafFile && (
+                      {selectedCafBoletas && (
                         <div className="text-sm text-muted-foreground">
-                          Archivo seleccionado: {selectedCafFile.name}
+                          Archivo seleccionado: {selectedCafBoletas.name}
                         </div>
                       )}
                     </div>
                     <div className="space-y-2 mt-4">
-                      <Label>Siguiente Folio a Usar</Label>
+                      <Label>Siguiente Folio Boletas</Label>
                       <Input
                         type="text"
                         inputMode="numeric"
                         placeholder="Ej: 1000"
-                        value={siiFolioSiguiente ?? ""}
+                        value={siiFolioSiguienteBoletas ?? ""}
                         onChange={(e) => {
                           const val = e.target.value.replace(/[^0-9]/g, "");
-                          setSiiFolioSiguiente(val ? Number(val) : null);
+                          setSiiFolioSiguienteBoletas(val ? Number(val) : null);
                         }}
                       />
                     </div>
                     <div className="flex gap-2 mt-4">
-                      <Button onClick={uploadCafBoletas} disabled={uploadingCaf || !selectedCafFile || !siiFolioSiguiente}>
-                        {uploadingCaf ? "Subiendo..." : "Subir CAF de boletas"}
+                      <Button onClick={uploadCafBoletas} disabled={uploadingCafBoletas || !selectedCafBoletas || !siiFolioSiguienteBoletas}>
+                        {uploadingCafBoletas ? "Subiendo..." : "Subir CAF de Boletas"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="mt-4">
+                  <CardHeader>
+                    <CardTitle>CAF / Folios - Facturas</CardTitle>
+                    <CardDescription>Carga tu archivo CAF (.xml) para la emisión de facturas electrónicas</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <Label>Archivo CAF Facturas (.xml)</Label>
+                      <input
+                        type="file"
+                        accept=".xml"
+                        onChange={(e) => setSelectedCafFacturas(e.target.files?.[0] ?? null)}
+                        className="w-full"
+                      />
+                      {selectedCafFacturas && (
+                        <div className="text-sm text-muted-foreground">
+                          Archivo seleccionado: {selectedCafFacturas.name}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2 mt-4">
+                      <Label>Siguiente Folio Facturas</Label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Ej: 1000"
+                        value={siiFolioSiguienteFacturas ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, "");
+                          setSiiFolioSiguienteFacturas(val ? Number(val) : null);
+                        }}
+                      />
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button onClick={uploadCafFacturas} disabled={uploadingCafFacturas || !selectedCafFacturas || !siiFolioSiguienteFacturas}>
+                        {uploadingCafFacturas ? "Subiendo..." : "Subir CAF de Facturas"}
                       </Button>
                     </div>
                   </CardContent>
