@@ -530,7 +530,7 @@ export default function PuntoDeVenta() {
     }
   };
 
-  const crearOrden = async (clienteData: any, montoTotal: number, tipoDoc: string) => {
+  const crearOrden = async (clienteData: any, montoTotal: number, tipoDoc: string, pdfUrl?: string) => {
     try {
       const cantidadTotal = carrito.reduce((sum, p) => sum + (p.cantidad || 1), 0);
       
@@ -552,6 +552,7 @@ export default function PuntoDeVenta() {
         dv: clienteData?.dv ? Number(clienteData.dv) : null,
         region: clienteData?.region ? Number(clienteData.region) : null,
         ciudad: clienteData?.ciudad ? Number(clienteData.ciudad) : null,
+        pdf80mm: pdfUrl || null,
       };
 
       const { data: ordenCreada, error } = await supabase.from("Orden").insert([ordenData]).select("id").single();
@@ -839,12 +840,13 @@ export default function PuntoDeVenta() {
           throw new Error(result.error || "Error en la generación");
         }
 
-        setPdfUrl(`https://pdv.restify.cl/dte${result.archivos.pdf}`);
+        const urlPdf = `https://pdv.restify.cl/dte${result.archivos.pdf}`;
+        setPdfUrl(urlPdf);
         setOpenPdfModal(true);
         setMensaje("Vale de venta generado correctamente");
         
         // Crear orden en la base de datos
-        await crearOrden(clienteData, montoTotal, "Vale de Venta");
+        await crearOrden(clienteData, montoTotal, "Vale de Venta", urlPdf);
         await actualizarStockDespuesVenta();
         
         setCarrito([]);
@@ -929,7 +931,7 @@ export default function PuntoDeVenta() {
         setMensaje("Documento emitido correctamente");
         
         // Crear orden en la base de datos
-        await crearOrden(clienteData, montoTotal, tipoDocumento);
+        await crearOrden(clienteData, montoTotal, tipoDocumento, documentoUrl);
         await actualizarStockDespuesVenta();
         
         setCarrito([]);

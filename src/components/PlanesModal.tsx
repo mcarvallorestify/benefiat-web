@@ -151,8 +151,10 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
 
     setProcesando(plan.slug);
     try {
-      // Obtener precio del plan (sin IVA para el cálculo)
-      const precioBase = parseInt(plan.priceMonthly.replace(/\./g, ""));
+      // Obtener precio del plan según selección mensual/anual
+      const precioBase = isYearly
+        ? parseInt(plan.priceYearly.replace(/\./g, ""))
+        : parseInt(plan.priceMonthly.replace(/\./g, ""));
       const montoAjustado = calcularMontoProportional(precioBase);
 
       // Obtener el token de autenticación
@@ -192,7 +194,10 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
         // Actualizar el plan en plan_empresa (sin reiniciar días restantes)
         const { error: updateError } = await supabase
           .from("plan_empresa")
-          .update({ plan_asociado: plan.planId })
+          .update({ 
+            plan_asociado: plan.planId,
+            valor_plan: precioBase
+          })
           .eq("empresa", empresa.id);
 
         if (updateError) throw updateError;
