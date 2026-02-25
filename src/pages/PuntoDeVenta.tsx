@@ -112,29 +112,21 @@ export default function PuntoDeVenta() {
           empresaRow?.nombreEmpresa &&
           empresaRow?.giroEmpresa &&
           empresaRow?.direccionEmpresa &&
-          empresaRow?.comunaEmpresa &&
-          empresaRow?.logo
-        );
-
-        const facturacionCompleta = !!(
-          siiRow?.numeroResolucion &&
-          siiRow?.fechaResolucion &&
-          siiRow?.acteco
-        );
-
-        const certificadoCompleto = !!(
-          certRow?.id &&
-          empresaRow?.claveCertificadoDigital
+          empresaRow?.comunaEmpresa
         );
 
         setEmpresaDatosOk(datosEmpresaCompletos);
-        setFacturacionOk(facturacionCompleta);
-        setCertificadoOk(certificadoCompleto);
+        setFacturacionOk(true); // No validar facturación al inicio
+        setCertificadoOk(true); // No validar certificado al inicio
         setTieneCafBoletas(cafBoletasExiste);
         setTieneCafFacturas(cafFacturasExiste);
 
         // Verificar si hay caja abierta hoy
-        const hoy = new Date().toISOString().split("T")[0];
+        // Usar fecha local de Chile para filtrar correctamente
+        const now = new Date();
+        const offset = -3; // Chile UTC-3
+        const local = new Date(now.getTime() + offset * 60 * 60 * 1000);
+        const hoy = local.toISOString().split("T")[0];
         const { data: cajaData } = await supabase
           .from("caja")
           .select("*")
@@ -146,7 +138,6 @@ export default function PuntoDeVenta() {
 
         setCajaActual(cajaData);
         setCajaAbierta(!!cajaData);
-        
         // Si no hay caja abierta, mostrar modal automáticamente
         if (!cajaData && mounted) {
           setOpenAbrirCaja(true);

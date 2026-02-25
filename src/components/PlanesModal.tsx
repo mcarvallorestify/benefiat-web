@@ -194,10 +194,7 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
         // Actualizar el plan en plan_empresa (sin reiniciar días restantes)
         const { error: updateError } = await supabase
           .from("plan_empresa")
-          .update({ 
-            plan_asociado: plan.planId,
-            valor_plan: precioBase
-          })
+          .update({ plan_asociado: plan.planId })
           .eq("empresa", empresa.id);
 
         if (updateError) throw updateError;

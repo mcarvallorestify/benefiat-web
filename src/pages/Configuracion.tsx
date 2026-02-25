@@ -56,6 +56,80 @@ const PLANES_RESUMEN = [
 ];
 
 export default function Configuracion() {
+    // Estados y función para crear usuario simple (correo, clave, rol)
+    const [openCrearUsuarioModal, setOpenCrearUsuarioModal] = useState(false);
+    const [nuevoUsuarioEmail, setNuevoUsuarioEmail] = useState("");
+    const [nuevoUsuarioClave, setNuevoUsuarioClave] = useState("");
+    const [nuevoUsuarioRol, setNuevoUsuarioRol] = useState("Usuario");
+    const [creandoUsuarioSimple, setCreandoUsuarioSimple] = useState(false);
+
+    const crearUsuarioSimple = async (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      if (!nuevoUsuarioEmail || !nuevoUsuarioClave || !nuevoUsuarioRol) {
+        toast({ title: "Datos requeridos", description: "Ingresa correo, clave y rol.", variant: "destructive" });
+        return;
+      }
+      if (!empresa?.id) {
+        toast({ title: "Empresa no encontrada", description: "Primero configura tu empresa." });
+        return;
+      }
+      setCreandoUsuarioSimple(true);
+      try {
+        // Validar email
+        const atIdx = nuevoUsuarioEmail.indexOf("@");
+        if (atIdx <= 0) throw new Error("Email inválido");
+        const correoUser = `${nuevoUsuarioEmail.slice(0, atIdx)}74${nuevoUsuarioEmail.slice(atIdx)}`;
+
+        // Crear usuario en tabla user
+        const { data: userData, error: usuarioError } = await supabase
+          .from("user")
+          .insert({
+            email: nuevoUsuarioEmail,
+            correoUser,
+            rol: nuevoUsuarioRol,
+            empresa: empresa.id,
+            estado: "activo",
+            pais: "Chile",
+          })
+          .select()
+          .single();
+        if (usuarioError) throw new Error(`Error al crear usuario: ${usuarioError.message}`);
+
+        // Crear cuenta de autenticación
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: correoUser,
+          password: nuevoUsuarioClave,
+        });
+        if (authError) throw new Error(authError.message || "Error creando cuenta");
+
+        // Actualizar tablaID por trigger
+        const { data: userUpdated, error: userRefreshError } = await supabase
+          .from("user")
+          .select("tablaID")
+          .eq("tablaID", authData.user?.id)
+          .single();
+        if (userRefreshError) throw new Error(`Error al obtener usuario actualizado: ${userRefreshError.message}`);
+
+        toast({ title: "Usuario creado", description: "El usuario fue creado correctamente." });
+        setNuevoUsuarioEmail("");
+        setNuevoUsuarioClave("");
+        setNuevoUsuarioRol("Usuario");
+        setOpenCrearUsuarioModal(false);
+        setLoadingUsuarios(true);
+        supabase
+          .from("user")
+          .select("tablaID, nombre, apellido, email, run, dv, rol")
+          .eq("empresa", empresa.id)
+          .then(({ data, error }) => {
+            setUsuarios(data || []);
+            setLoadingUsuarios(false);
+          });
+      } catch (e: any) {
+        toast({ title: "Error", description: e?.message || "No se pudo crear el usuario.", variant: "destructive" });
+      } finally {
+        setCreandoUsuarioSimple(false);
+      }
+    };
   const { user } = useUser();
   const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
   const { sucursales, planInfo, reloadSucursales } = useSucursales(empresa?.id);
@@ -1591,6 +1665,12 @@ export default function Configuracion() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-4">
+                  <Button
+                    className="bg-primary text-white px-4 py-2 rounded-xl"
+                    onClick={() => setOpenCrearUsuarioModal(true)}
+                  >
+                    Crear usuario
+                  </Button>
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -1601,6 +1681,74 @@ export default function Configuracion() {
                     />
                   </div>
                 </div>
+                {/* Modal para crear usuario simple */}
+                {openCrearUsuarioModal && (
+                  <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-40">
+                    <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+                      <h4 className="text-xl font-bold mb-4">Crear usuario</h4>
+                      <form onSubmit={crearUsuarioSimple} className="space-y-4">
+                        <div>
+                          <label className="block mb-1 font-medium">Correo</label>
+                          <input
+                            type="email"
+                            className="border rounded px-3 py-2 w-full"
+                            placeholder="Correo"
+                            value={nuevoUsuarioEmail}
+                            onChange={e => setNuevoUsuarioEmail(e.target.value)}
+                            disabled={creandoUsuarioSimple}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block mb-1 font-medium">Clave</label>
+                          <input
+                            type="password"
+                            className="border rounded px-3 py-2 w-full"
+                            placeholder="Clave"
+                            value={nuevoUsuarioClave}
+                            onChange={e => setNuevoUsuarioClave(e.target.value)}
+                            disabled={creandoUsuarioSimple}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block mb-1 font-medium">Rol</label>
+                          <div className="w-full">
+                            <Select value={nuevoUsuarioRol} onValueChange={setNuevoUsuarioRol} disabled={creandoUsuarioSimple}>
+                              <SelectTrigger className="w-full rounded-xl">
+                                <SelectValue placeholder="Selecciona un rol" />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                <SelectItem value="Administrador">Administrador</SelectItem>
+                                <SelectItem value="Vendedor">Vendedor</SelectItem>
+                                <SelectItem value="Contador">Contador</SelectItem>
+                                <SelectItem value="Bodeguero">Bodeguero</SelectItem>
+                                <SelectItem value="Cliente">Cliente</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded-xl border"
+                            onClick={() => setOpenCrearUsuarioModal(false)}
+                            disabled={creandoUsuarioSimple}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            className="bg-primary text-white px-4 py-2 rounded-xl"
+                            disabled={creandoUsuarioSimple}
+                          >
+                            {creandoUsuarioSimple ? "Creando..." : "Crear usuario"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
 
                 {loadingUsuarios ? (
                   <div className="text-center py-8 text-muted-foreground">
@@ -1730,7 +1878,7 @@ export default function Configuracion() {
                     <div>
                       <p className="font-medium">Contador</p>
                       <p className="text-muted-foreground">
-                        Acceso a reportes, documentos y configuración financiera
+                        Acceso a Reporte Mensual
                       </p>
                     </div>
                     <div>

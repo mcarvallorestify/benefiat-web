@@ -88,12 +88,32 @@ export default function Caja() {
     if (!empresa?.id) return;
     setLoadingCaja(true);
     try {
-      const hoy = new Date().toISOString().split("T")[0];
-      // Buscar la última caja abierta (sin cerrar) del día
+      // Usar fecha local de Chile para filtrar correctamente
+      const now = new Date();
+      const offset = -3; // Chile UTC-3
+      const local = new Date(now.getTime() + offset * 60 * 60 * 1000);
+      const hoy = local.toISOString().split("T")[0];
+      // Consultar sucursal actual de la empresa desde la tabla 'Sucursal'
+      const { data: sucursalData, error: sucursalError } = await supabase
+        .from("Sucursal")
+        .select("id")
+        .eq("empresa", empresa.id)
+        .maybeSingle();
+
+      if (sucursalError) throw sucursalError;
+      const sucursalId = sucursalData?.id || null;
+      if (!sucursalId) {
+        setCajaActual(null);
+        setLoadingCaja(false);
+        return;
+      }
+
+      // Buscar la última caja abierta (sin cerrar) del día, filtrando por sucursal actual
       const { data, error } = await supabase
         .from("caja")
         .select("*")
         .eq("empresa", empresa.id)
+        .eq("sucursal", sucursalId)
         .gte("created_at", `${hoy}T00:00:00`)
         .lte("created_at", `${hoy}T23:59:59`)
         .is("monto_cierre", null)

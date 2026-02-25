@@ -88,6 +88,7 @@ export default function ReporteMensual() {
   const [filtroProveedor, setFiltroProveedor] = useState("");
   const [proveedorSearchReporte, setProveedorSearchReporte] = useState("");
   const [tipoAgrupacion, setTipoAgrupacion] = useState<"orden" | "producto" | "proveedor" | "categoria">("orden");
+  const [filtroMedioPago, setFiltroMedioPago] = useState("");
 
   // Datos
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
@@ -125,7 +126,12 @@ export default function ReporteMensual() {
         console.error('Error cargando órdenes:', ordenesError);
         setOrdenes([]);
       } else {
-        setOrdenes(ordenesData || []);
+        // Asegura que todas las órdenes tengan la propiedad mediodePago
+        const ordenesConMedio = (ordenesData || []).map(o => ({
+          ...o,
+          mediodePago: typeof o.mediodePago === 'undefined' ? '' : o.mediodePago
+        }));
+        setOrdenes(ordenesConMedio);
       }
 
       // Cargar orden_items de esas órdenes
@@ -184,6 +190,7 @@ export default function ReporteMensual() {
 
   // Filtrar y calcular datos
   const datosFiltrados = React.useMemo(() => {
+
     let ordenesFiltradas = [...ordenes];
 
     // Filtro por cliente
@@ -213,6 +220,14 @@ export default function ReporteMensual() {
           .map(item => item.orden_id);
         ordenesFiltradas = ordenesFiltradas.filter(o => ordenIdsConProveedor.includes(o.id));
       }
+    }
+
+    // Filtro por medio de pago (exacto, case-insensitive)
+    if (filtroMedioPago) {
+      ordenesFiltradas = ordenesFiltradas.filter(o => {
+        const medio = (o as any).mediodePago || "";
+        return medio.toLowerCase() === filtroMedioPago.toLowerCase();
+      });
     }
 
     // Calcular totales
@@ -502,19 +517,34 @@ export default function ReporteMensual() {
             </div>
 
             {/* Tipo de agrupación */}
-            <div className="space-y-2">
-              <Label htmlFor="tipoAgrupacion">Agrupar por</Label>
-              <Select value={tipoAgrupacion} onValueChange={(v) => setTipoAgrupacion(v as any)}>
-                <SelectTrigger id="tipoAgrupacion">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="orden">Órdenes Individuales</SelectItem>
-                  <SelectItem value="producto">Producto</SelectItem>
-                  <SelectItem value="proveedor">Proveedor</SelectItem>
-                  <SelectItem value="categoria">Categoría</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="tipoAgrupacion">Agrupar por</Label>
+                <Select value={tipoAgrupacion} onValueChange={(v) => setTipoAgrupacion(v as any)}>
+                  <SelectTrigger id="tipoAgrupacion">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="orden">Órdenes Individuales</SelectItem>
+                    <SelectItem value="producto">Producto</SelectItem>
+                    <SelectItem value="proveedor">Proveedor</SelectItem>
+                    <SelectItem value="categoria">Categoría</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="filtroMedioPago">Medio de Pago</Label>
+                <Select value={filtroMedioPago} onValueChange={setFiltroMedioPago}>
+                  <SelectTrigger id="filtroMedioPago">
+                    <SelectValue placeholder="Seleccionar medio de pago" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Transferencia">Transferencia</SelectItem>
+                    <SelectItem value="Efectivo">Efectivo</SelectItem>
+                    <SelectItem value="Tarjeta">Tarjeta</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <Button onClick={cargarDatos} className="w-full sm:w-auto" disabled={loading}>

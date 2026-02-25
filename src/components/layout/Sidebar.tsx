@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { Receipt, Building2 } from "lucide-react";
 import { navigationItems } from "./navigationItems";
+import { ProyectosMenuItem } from "./ProyectosMenuItem";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/hooks/useUser";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -50,6 +51,8 @@ export function Sidebar() {
             </NavLink>
           );
         })}
+        {/* Menú Proyectos solo para empresa 104 y 74 */}
+        <ProyectosMenuItem />
       </nav>
 
       {/* Company info */}

@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useUser } from "@/hooks/useUser";
 import { useEmpresa } from "@/hooks/useEmpresa";
@@ -39,7 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, Package, Edit, Trash2, Menu, FolderOpen, Users, ClipboardList } from "lucide-react";
+import { Plus, Search, Package, Edit, Trash2, Menu, FolderOpen, Users, ClipboardList, Folder } from "lucide-react";
 import { IngresoInventarioDialog, MenuAcciones, MenuAccionesInventario } from "@/components/productos/ProductosModals";
 
 function formatCLP(value: number) {
@@ -48,6 +49,7 @@ function formatCLP(value: number) {
 }
 
 export default function Productos() {
+    const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [sideMenuOpen, setSideMenuOpen] = useState(false);
@@ -679,6 +681,19 @@ export default function Productos() {
               <ClipboardList className="w-5 h-5" />
               <span className="font-medium">Inventario</span>
             </button>
+            {/* Botón Proyectos solo para empresas 104 y 78 */}
+            {empresa && (empresa.id === 104 || empresa.id === 78) && (
+              <button
+                onClick={() => {
+                  navigate("/proyectos");
+                  setSideMenuOpen(false);
+                }}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors hover:bg-muted text-foreground"
+              >
+                <FolderOpen className="w-5 h-5" />
+                <span className="font-medium">Proyectos</span>
+              </button>
+            )}
           </nav>
         </SheetContent>
       </Sheet>
@@ -732,6 +747,16 @@ export default function Productos() {
                 <ClipboardList className="w-5 h-5" />
                 <span className="font-medium">Inventario</span>
               </button>
+              {/* Botón Proyectos solo para empresas 104 y 78 */}
+              {empresa && (empresa.id === 104 || empresa.id === 78) && (
+                <button
+                  onClick={() => { window.location.href = "/proyectos"; }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors hover:bg-muted text-foreground"
+                >
+                  <FolderOpen className="w-5 h-5" />
+                  <span className="font-medium">Proyectos</span>
+                </button>
+              )}
             </nav>
           </div>
         </aside>
