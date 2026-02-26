@@ -5,6 +5,7 @@ interface PlanInfo {
   planId: number | null;
   maxSucursales: number | null; // null = ilimitadas
   canCreateMore: boolean;
+  estado?: string; // Puede ser 'Activo', 'Dado de baja', etc.
 }
 
 export function useSucursales(empresaId: number | null) {
@@ -28,10 +29,10 @@ export function useSucursales(empresaId: number | null) {
       try {
         setLoading(true);
 
-        // 1. Obtener el plan asociado a la empresa
+        // 1. Obtener el plan asociado a la empresa, incluyendo el estado
         const { data: planEmpresa, error: planError } = await supabase
           .from("plan_empresa")
-          .select("plan_asociado")
+          .select("plan_asociado, estado")
           .eq("empresa", empresaId)
           .single();
 
@@ -68,6 +69,7 @@ export function useSucursales(empresaId: number | null) {
           planId,
           maxSucursales,
           canCreateMore,
+          estado: planEmpresa?.estado || undefined,
         });
 
         // 5. Establecer sucursal actual (por defecto la primera)

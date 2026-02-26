@@ -3,6 +3,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React from "react";
+import { useUserRole } from "@/hooks/useUserRole";
+import { Navigate } from "react-router-dom";
+import RestauranteMesas from "./pages/RestauranteMesas";
 
 import Dashboard from "./pages/Dashboard";
 import Documentos from "./pages/Documentos";
@@ -18,144 +22,10 @@ import Proyectos from "./pages/Proyectos";
 import Caja from "./pages/Caja";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireRole } from "@/components/RequireRole";
-
-const queryClient = new QueryClient();
-
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/crear-cuenta" element={<CrearCuenta />} />
-          {/* Rutas para Administrador */}
-          <Route
-            path="/"
-            element={
-              <RequireAuth>
-                <RoleRedirect />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/documentos"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador"]}>
-                  <Documentos />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/restauranteMesas"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador","Vendedor"]}>
-                  <RestauranteMesas />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/clientes"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador"]}>
-                  <Clientes />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/productos"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador", "Bodeguero"]}>
-                  <Productos />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/configuracion"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador"]}>
-                  <Configuracion />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/punto-de-venta"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador", "Vendedor"]}>
-                  <PuntoDeVenta />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/caja"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador"]}>
-                  <Caja />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          {/* Rutas para Contador: solo ReporteMensual */}
-          <Route
-            path="/reporte-mensual"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Contador", "Administrador"]}>
-                  <ReporteMensual />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/proyectos"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Administrador"]}>
-                  <Proyectos />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          {/* Redirección para Contador: si accede a otra ruta, NotFound */}
-          <Route
-            path="*"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={["Contador"]}>
-                  <NotFound />
-                </RequireRole>
-                <RequireRole allowedRoles={["Administrador", "Vendedor", "Bodeguero", "Cliente"]}>
-                  <NotFound />
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
-
-export default App;
-// Redirección según rol
 import { useUser } from "@/hooks/useUser";
-import { useUserRole } from "@/hooks/useUserRole";
-import { Navigate } from "react-router-dom";
-import RestauranteMesas from "./pages/RestauranteMesas";
+import { useEmpresa } from "@/hooks/useEmpresa";
+import ModalPlanInactivo from "./components/ModalPlanInactivo";
+import { useSucursales } from "@/hooks/useSucursales";
 
 function RoleRedirect() {
   const { user } = useUser();
@@ -173,3 +43,161 @@ function RoleRedirect() {
       return <Navigate to="/login" />;
   }
 }
+
+function PlanStatusGuard({ children }) {
+  const { user, loading: loadingUser } = useUser();
+  const { empresa, loading: loadingEmpresa } = useEmpresa(user?.id);
+  const { planInfo } = useSucursales(empresa?.id);
+  const [open, setOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!loadingUser && !loadingEmpresa && empresa && planInfo && planInfo.estado !== "Activo") {
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  }, [loadingUser, loadingEmpresa, empresa, planInfo]);
+
+  if (loadingUser || loadingEmpresa) return null;
+  if (!empresa || !planInfo) return null;
+
+  if (open) {
+    return <ModalPlanInactivo open={open} />;
+  }
+  return children;
+}
+
+const queryClient = new QueryClient();
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <PlanStatusGuard>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/crear-cuenta" element={<CrearCuenta />} />
+            {/* Rutas para Administrador */}
+            <Route
+              path="/"
+              element={
+                <RequireAuth>
+                  <RoleRedirect />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/documentos"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador"]}>
+                    <Documentos />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/restauranteMesas"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador","Vendedor"]}>
+                    <RestauranteMesas />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clientes"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador"]}>
+                    <Clientes />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/productos"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador", "Bodeguero"]}>
+                    <Productos />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/configuracion"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador"]}>
+                    <Configuracion />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/punto-de-venta"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador", "Vendedor"]}>
+                    <PuntoDeVenta />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/caja"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador"]}>
+                    <Caja />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            {/* Rutas para Contador: solo ReporteMensual */}
+            <Route
+              path="/reporte-mensual"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Contador", "Administrador"]}>
+                    <ReporteMensual />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/proyectos"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Administrador"]}>
+                    <Proyectos />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+            {/* Redirección para Contador: si accede a otra ruta, NotFound */}
+            <Route
+              path="*"
+              element={
+                <RequireAuth>
+                  <RequireRole allowedRoles={["Contador"]}>
+                    <NotFound />
+                  </RequireRole>
+                  <RequireRole allowedRoles={["Administrador", "Vendedor", "Bodeguero", "Cliente"]}>
+                    <NotFound />
+                  </RequireRole>
+                </RequireAuth>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+      </PlanStatusGuard>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
+export default App;

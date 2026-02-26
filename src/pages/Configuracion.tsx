@@ -62,6 +62,17 @@ export default function Configuracion() {
     const [nuevoUsuarioClave, setNuevoUsuarioClave] = useState("");
     const [nuevoUsuarioRol, setNuevoUsuarioRol] = useState("Usuario");
     const [creandoUsuarioSimple, setCreandoUsuarioSimple] = useState(false);
+      const [planes, setPlanes] = useState<any[]>([]);
+      useEffect(() => {
+        // Cargar planes disponibles
+        const fetchPlanes = async () => {
+          const { data, error } = await supabase
+            .from("planes")
+            .select("*");
+          if (!error && data) setPlanes(data);
+        };
+        fetchPlanes();
+      }, []);
 
     const crearUsuarioSimple = async (e?: React.FormEvent) => {
       if (e) e.preventDefault();
@@ -2151,8 +2162,69 @@ export default function Configuracion() {
                     </div>
 
                     <div className="flex flex-col gap-3">
-                      <Button 
-                        onClick={() => setOpenPlanesModal(true)} 
+                      <Button
+                        onClick={async () => {
+                          // Si el plan actual es anual y el usuario selecciona un plan mensual
+                          if (planActual.periodo === "anual") {
+                            const confirmMsg = `Vas a cambiar de un plan anual a uno mensual.\n\n- Perderás los beneficios del plan anual (como el descuento).\n- El cambio es inmediato y el ciclo de facturación será mensual.\n- No hay reembolso proporcional del tiempo no usado del plan anual.\n\n¿Deseas continuar y pagar el primer mes del nuevo plan mensual ahora?`;
+                            if (!window.confirm(confirmMsg)) return;
+                            if (!empresa?.id) {
+                              toast({ title: "Empresa no encontrada", description: "No se pudo identificar la empresa.", variant: "destructive" });
+                              return;
+                            }
+                            try {
+                              // Elegir el plan mensual (por ahora el primero disponible)
+                              const planMensual = planes?.find(p => p.periodo === "mensual");
+                              if (!planMensual) {
+                                toast({ title: "No hay plan mensual disponible", description: "No se encontró un plan mensual para cambiar.", variant: "destructive" });
+                                return;
+                              }
+                              // Cobrar solo el precio del plan mensual, sin calcular por días restantes
+                              const monto = Number(planMensual.precioMensual.replace(/\./g, ""));
+                              const planId = planMensual.id;
+                              // Obtener token de sesión
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const token = session?.access_token;
+                              if (!token) throw new Error("No hay sesión activa");
+                              // Cobrar primer mes del plan mensual
+                              const response = await fetch("https://btbdasehtcqffyoscgzp.supabase.co/functions/v1/pagos-plan", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  "Authorization": `Bearer ${token}`,
+                                },
+                                body: JSON.stringify({
+                                  empresa_id: empresa.id,
+                                  monto: monto,
+                                  plan_id: planId,
+                                }),
+                              });
+                              if (!response.ok) {
+                                const errorData = await response.json().catch(() => ({}));
+                                toast({ title: "Pago rechazado", description: errorData.message || "El pago fue rechazado. El plan no se cambió.", variant: "destructive" });
+                                return;
+                              }
+                              // Actualizar plan_empresa: cambiar a plan mensual, estado Activo, perder días restantes
+                              const { error } = await supabase
+                                .from("plan_empresa")
+                                .update({ estado: "Activo", plan: planId })
+                                .eq("empresa", empresa.id);
+                              if (error) throw error;
+                              // Eliminar días restantes del anual
+                              await supabase
+                                .from("empresa")
+                                .update({ dias_restantes_plan: 0 })
+                                .eq("id", empresa.id);
+                              toast({ title: "Plan cambiado", description: `Tu suscripción ahora es mensual (${planMensual.nombre}). El cobro fue $${planMensual.precioMensual}. Los días restantes del anual se pierden.` });
+                              await reloadSucursales();
+                              window.location.reload();
+                            } catch (e) {
+                              toast({ title: "Error", description: e?.message || "No se pudo cambiar el plan.", variant: "destructive" });
+                            }
+                          } else {
+                            setOpenPlanesModal(true);
+                          }
+                        }}
                         className="w-full"
                         size="lg"
                       >
@@ -2188,6 +2260,104 @@ export default function Configuracion() {
                         </div>
                       </CardContent>
                     </Card>
+
+                    {/* Botón para darse de baja o reactivar plan según estado */}
+                    {planInfo.estado === "Dado de baja" ? (
+                      <Button
+                        variant="default"
+                        className="w-full mt-6"
+                        onClick={async () => {
+                          let confirmMsg = "¿Deseas reactivar tu plan?";
+                          const diasRestantesCero = empresa?.dias_restantes_plan === 0 && planActual;
+                          if (diasRestantesCero) {
+                            confirmMsg = `Tu período actual ha finalizado. Al reactivar se realizará el cobro correspondiente al plan (${planActual.nombre}: $${planActual.precioMensual}). ¿Deseas continuar?`;
+                          }
+                          if (!window.confirm(confirmMsg)) return;
+                          if (!empresa?.id) {
+                            toast({ title: "Empresa no encontrada", description: "No se pudo identificar la empresa.", variant: "destructive" });
+                            return;
+                          }
+                          try {
+                            if (diasRestantesCero) {
+                              // POST a función edge pagos-plan con Authorization
+                              const monto = Number(planActual.precioMensual.replace(/\./g, ""));
+                              const planId = planInfo.planId;
+                              // Obtener token de sesión
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const token = session?.access_token;
+                              if (!token) throw new Error("No hay sesión activa");
+                              const response = await fetch("https://btbdasehtcqffyoscgzp.supabase.co/functions/v1/pagos-plan", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  "Authorization": `Bearer ${token}`,
+                                },
+                                body: JSON.stringify({
+                                  empresa_id: empresa.id,
+                                  monto: monto,
+                                  plan_id: planId,
+                                }),
+                              });
+                              if (!response.ok) {
+                                const errorData = await response.json().catch(() => ({}));
+                                toast({ title: "Pago rechazado", description: errorData.message || "El pago fue rechazado. El plan no se reactivó.", variant: "destructive" });
+                                // No recargar ni refrescar datos, ni cambiar estado
+                                return;
+                              }
+                              // Si el pago fue exitoso, actualizar el plan a Activo
+                              const { error } = await supabase
+                                .from("plan_empresa")
+                                .update({ estado: "Activo" })
+                                .eq("empresa", empresa.id);
+                              if (error) throw error;
+                              toast({ title: "Plan reactivado", description: "Tu suscripción ha sido reactivada." });
+                              await reloadSucursales();
+                              window.location.reload();
+                            } else {
+                              // Si no es pago, solo activar y recargar
+                              const { error } = await supabase
+                                .from("plan_empresa")
+                                .update({ estado: "Activo" })
+                                .eq("empresa", empresa.id);
+                              if (error) throw error;
+                              toast({ title: "Plan reactivado", description: "Tu suscripción ha sido reactivada." });
+                              await reloadSucursales();
+                              window.location.reload();
+                            }
+                          } catch (e) {
+                            toast({ title: "Error", description: e?.message || "No se pudo reactivar el plan.", variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Reactivar plan
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        className="w-full mt-6"
+                        onClick={async () => {
+                          if (!window.confirm("¿Estás seguro que deseas darte de baja del plan? Esta acción es irreversible.")) return;
+                          if (!empresa?.id) {
+                            toast({ title: "Empresa no encontrada", description: "No se pudo identificar la empresa.", variant: "destructive" });
+                            return;
+                          }
+                          try {
+                            const { error } = await supabase
+                              .from("plan_empresa")
+                              .update({ estado: "Dado de baja" })
+                              .eq("empresa", empresa.id);
+                            if (error) throw error;
+                            toast({ title: "Plan dado de baja", description: "Tu suscripción ha sido cancelada." });
+                            await reloadSucursales();
+                            window.location.reload();
+                          } catch (e) {
+                            toast({ title: "Error", description: e?.message || "No se pudo dar de baja el plan.", variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Darse de baja
+                      </Button>
+                    )}
                   </>
                 ) : (
                   <div className="text-center py-12">

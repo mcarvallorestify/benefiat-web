@@ -79,15 +79,17 @@ const plans = [
 interface PlanesModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  hideTrialMessage?: boolean;
 }
 
-export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
+export const PlanesModal = ({ open, onOpenChange, hideTrialMessage }: PlanesModalProps) => {
   const [isYearly, setIsYearly] = useState(false);
   const [currentPlanId, setCurrentPlanId] = useState<number | null>(null);
   const [diasRestantes, setDiasRestantes] = useState<number>(0);
   const [procesando, setProcesando] = useState<string | null>(null);
   const [planEnConfirmacion, setPlanEnConfirmacion] = useState<typeof plans[0] | null>(null);
   const [montoConfirmacion, setMontoConfirmacion] = useState<number>(0);
+  const [valorPlanActual, setValorPlanActual] = useState<number | null>(null);
   const { user } = useUser();
   const { empresa } = useEmpresa(user?.id);
 
@@ -99,13 +101,14 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
       try {
         const { data: planData, error: planError } = await supabase
           .from("plan_empresa")
-          .select("plan_asociado")
+          .select("plan_asociado, valor_plan")
           .eq("empresa", empresa.id)
           .maybeSingle();
         
         if (planError) throw planError;
         if (planData) {
           setCurrentPlanId(planData.plan_asociado);
+          setValorPlanActual(planData.valor_plan);
         }
 
         // Obtener días restantes de la tabla empresa
@@ -127,20 +130,60 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
     fetchCurrentPlan();
   }, [empresa?.id]);
 
-  const isCurrentPlan = (planIds: number[]) => {
-    return currentPlanId !== null && planIds.includes(currentPlanId);
+  const isCurrentPlan = (planIds: number[], isPlanYearly: boolean) => {
+    if (currentPlanId === null) return false;
+    // Detectar si el plan actual es anual
+    const planActual = plans.find(p => p.planIds.includes(currentPlanId));
+    if (!planActual) return false;
+    const precioActualMensual = parseInt(planActual.priceMonthly.replace(/\./g, ""));
+    const precioActualAnual = parseInt(planActual.priceYearly.replace(/\./g, ""));
+    const esActualAnual = valorPlanActual === precioActualAnual;
+    // Coincide id y periodo
+    return planIds.includes(currentPlanId) && ((isPlanYearly && esActualAnual) || (!isPlanYearly && !esActualAnual));
   };
 
   const calcularMontoProportional = (precioPlan: number): number => {
+    if (!valorPlanActual || !planEnConfirmacion) return precioPlan;
     if (diasRestantes <= 0) return precioPlan;
-    
-    // Calcular monto proporcional basado en días restantes (asumiendo 30 días por mes)
-    const diaDelMes = new Date().getDate();
-    const diasTotalesDelMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-    const proporcion = diasRestantes / diasTotalesDelMes;
-    const monto = Math.round(precioPlan * proporcion);
-    
-    return Math.max(0, monto);
+
+    const planActual = plans.find(p => p.planIds.includes(currentPlanId ?? -1));
+    if (!planActual) return precioPlan;
+
+    const precioActualMensual = parseInt(planActual.priceMonthly.replace(/\./g, ""));
+    const precioActualAnual = parseInt(planActual.priceYearly.replace(/\./g, ""));
+    const esActualAnual = valorPlanActual === precioActualAnual;
+    const esActualMensual = valorPlanActual === precioActualMensual;
+    const mismoGrupo = planEnConfirmacion && planActual.planIds.includes(planEnConfirmacion.planId);
+
+    // Si el nuevo plan es igual o inferior, no cobrar
+    if (precioPlan <= valorPlanActual) return 0;
+
+    // Si ambos son mensuales y el nuevo es más caro, cobrar solo el proporcional por la diferencia
+    if (!isYearly && esActualMensual) {
+      const diferencia = precioPlan - precioActualMensual;
+      const monto = Math.round((diferencia / 30) * diasRestantes);
+      return monto > 0 ? monto : 0;
+    }
+
+    // Si ambos son anuales y el nuevo es más caro, cobrar el proporcional anual
+    if (isYearly && esActualAnual) {
+      const diferencia = precioPlan - precioActualAnual;
+      const monto = Math.round((diferencia / 365) * diasRestantes);
+      return monto > 0 ? monto : 0;
+    }
+
+    // Si cambia de mensual a anual dentro del mismo grupo, cobrar el año completo
+    if (isYearly && esActualMensual && mismoGrupo) {
+      return precioPlan;
+    }
+
+    // Si cambia de anual a mensual dentro del mismo grupo, no cobrar
+    if (!isYearly && esActualAnual && mismoGrupo) {
+      return 0;
+    }
+
+    // Por defecto, cobrar el precio completo
+    return precioPlan;
   };
 
   const procesarCambioDePlan = async (plan: typeof plans[0]) => {
@@ -221,11 +264,23 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
   };
 
   const abrirConfirmacion = (plan: typeof plans[0]) => {
-    const precioBase = parseInt(plan.priceMonthly.replace(/\./g, ""));
+    const precioBase = isYearly
+      ? parseInt(plan.priceYearly.replace(/\./g, ""))
+      : parseInt(plan.priceMonthly.replace(/\./g, ""));
     const monto = calcularMontoProportional(precioBase);
     setPlanEnConfirmacion(plan);
     setMontoConfirmacion(monto);
   };
+
+  useEffect(() => {
+    if (planEnConfirmacion) {
+      const precioBase = isYearly
+        ? parseInt(planEnConfirmacion.priceYearly.replace(/\./g, ""))
+        : parseInt(planEnConfirmacion.priceMonthly.replace(/\./g, ""));
+      setMontoConfirmacion(calcularMontoProportional(precioBase));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isYearly, diasRestantes, planEnConfirmacion]);
 
   return (
     <>
@@ -237,8 +292,8 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
               <span className="text-primary">tu negocio</span>
             </DialogTitle>
             <DialogDescription className="text-center text-base">
-              Sin contratos de permanencia. Cancela cuando quieras. 
-              Todos los planes incluyen 5 días de prueba gratis.
+              Sin contratos de permanencia. Cancela cuando quieras.{" "}
+              {!hideTrialMessage && "Todos los planes incluyen 5 días de prueba gratis."}
             </DialogDescription>
           </DialogHeader>
 
@@ -268,7 +323,7 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
           {/* Pricing Cards */}
           <div className="grid md:grid-cols-3 gap-6 mt-8">
             {plans.map((plan, index) => {
-              const isPlanActual = isCurrentPlan(plan.planIds);
+              const isPlanActual = isCurrentPlan(plan.planIds, isYearly);
               
               return (
                 <div
@@ -389,13 +444,32 @@ export const PlanesModal = ({ open, onOpenChange }: PlanesModalProps) => {
                     ${montoConfirmacion.toLocaleString("es-CL")}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    (ajustado por días restantes)
+                    {/* Mensaje dinámico según el tipo de cambio */}
+                    {(() => {
+                      if (!valorPlanActual || !planEnConfirmacion) return "";
+                      if (diasRestantes <= 0) {
+                        return isYearly ? "(anual, precio completo)" : "(mensual, precio completo)";
+                      }
+                      // Usar el precio base calculado para la comparación
+                      const precioBase = isYearly
+                        ? parseInt(planEnConfirmacion.priceYearly.replace(/\./g, ""))
+                        : parseInt(planEnConfirmacion.priceMonthly.replace(/\./g, ""));
+                      if (montoConfirmacion < precioBase) {
+                        return isYearly
+                          ? "(proporcional anual por diferencia de precio)"
+                          : "(proporcional mensual por diferencia de precio)";
+                      }
+                      if (montoConfirmacion === precioBase) {
+                        return isYearly ? "(anual, precio completo)" : "(mensual, precio completo)";
+                      }
+                      return "";
+                    })()}
                   </p>
                 </div>
               </div>
 
               <div className="text-xs text-muted-foreground space-y-1">
-                <p>✓ Tu período de facturación no se reinicia</p>
+                <p>✓ Tu período de facturación se reinicia</p>
                 <p>✓ El cambio es efectivo de inmediato</p>
                 <p>✓ Puedes cambiar de plan nuevamente en cualquier momento</p>
               </div>
